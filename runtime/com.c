@@ -1696,6 +1696,16 @@ static void draw_lines(const TVert *tv, uint32_t nv, uint32_t pt){
  * it returns 0 and the caller falls back to the old (index expansion) path. */
 static struct { uint32_t n, vbo, ibo, isz; int32_t base; uint64_t gh; } g_ix;
 static uint64_t g_dip_ix = 0, g_dip_ixfb[6];
+/* TEXID=<id>[,<id>...]: textures to log (creation, uploads, draws into them) */
+static int texid_on(uint32_t id){
+    static int n = -1; static uint32_t L[16];
+    if (n < 0){ n = 0; const char *e = ENVC("TEXID");
+        for (const char *p = e; p && *p && n < 16; ){ L[n++] = (uint32_t)strtoul(p, (char **)&p, 10); while (*p == ',') p++; } }
+    for (int k = 0; k < n; k++) if (L[k] == id) return 1;
+    return 0;
+}
+static uint8_t rtd[16384];   /* render targets drawn into (BOXLOG) */
+static int g_sc_rect[4], g_sc_ok;   /* SetScissorRect (left, top, right, bottom) */
 static int draw_up(uint32_t pt, uint32_t nv, uint32_t vp, uint32_t stride){
     uint64_t _t0 = now_ns();
     static TVert tv[4096];
@@ -1710,8 +1720,17 @@ static int draw_up(uint32_t pt, uint32_t nv, uint32_t vp, uint32_t stride){
     vsk = aspect_apply(vsk, prog);
 #ifdef __wasm__
     { void metal_set_ui_clip(float); metal_set_ui_clip(g_ui_clip); }
-    if (prog || g_cur_fvf){ int ffp_viewport_rect(int *); void metal_set_vp_clip(int, int, int, int);
-        int vr[4]; if (ffp_viewport_rect(vr)) metal_set_vp_clip(vr[0], vr[1], vr[2], vr[3]); }
+    /* the viewport, and the scissor rectangle when D3DRS_SCISSORTESTENABLE
+     * (174) is on: CMR5 draws its pace-note arrow larger than its box and
+     * cuts it to the box with SetScissorRect */
+    { int ffp_viewport_rect(int *); void metal_set_vp_clip(int, int, int, int);
+      int vr[4], has = ffp_viewport_rect(vr);
+      if (!has){ vr[0] = 0; vr[1] = 0; vr[2] = (int)g_bb_w; vr[3] = (int)g_bb_h; }
+      if (g_rs[174] && g_sc_ok){
+          if (g_sc_rect[0] > vr[0]) vr[0] = g_sc_rect[0]; if (g_sc_rect[1] > vr[1]) vr[1] = g_sc_rect[1];
+          if (g_sc_rect[2] < vr[2]) vr[2] = g_sc_rect[2]; if (g_sc_rect[3] < vr[3]) vr[3] = g_sc_rect[3];
+          has = 1; }
+      if (has) metal_set_vp_clip(vr[0], vr[1], vr[2], vr[3]); }
 #endif
 
     /* Declaration parsing ONCE per (declaration, shader).
@@ -1912,13 +1931,33 @@ static int draw_up(uint32_t pt, uint32_t nv, uint32_t vp, uint32_t stride){
       if (bl && bn < 120 && nv && !g_cur_rt){
           for (uint32_t k = 0; k < nv && k < 64; k++){
               float w = tv[k].w ? tv[k].w : 1.f, sx = (tv[k].x / w * .5f + .5f) * g_bb_w, sy = (.5f - tv[k].y / w * .5f) * g_bb_h;
-              if (sx >= bx0 && sx <= bx1 && sy >= by0 && sy <= by1){ bn++;
-                  fprintf(stderr, "  [box] prog=%u fvf=0x%x nv=%u tex=%u tex1=%u:", g_cur_vs, g_cur_fvf, nv, g_cur_tex, 0u);
+              if (sx >= bx0 && sx <= bx1 && sy >= by0 && sy <= by1){
+                  static uint32_t seen[128]; static int ns = 0; unsigned ktw = 0, kth = 0; { void metal_tex_size(unsigned, unsigned *, unsigned *); if (g_cur_tex) metal_tex_size(g_cur_tex, &ktw, &kth); }
+                  uint32_t key = g_cur_tex * 2654435761u ^ g_cur_fvf ^ (g_cur_vs << 20) ^ nv;
+                  if (ktw == 256u && kth == 256u) key ^= ((uint32_t)sx << 8) ^ ((uint32_t)sy << 20) ^ (uint32_t)(tv[k].t[0][0] * 997.f);
+                  int dup = 0; for (int q = 0; q < ns; q++) if (seen[q] == key) dup = 1;
+                  if (dup || ns >= 128) break;
+                  seen[ns++] = key; bn++;
+                  { unsigned tw = 0, th = 0; void metal_tex_size(unsigned, unsigned *, unsigned *); if (g_cur_tex) metal_tex_size(g_cur_tex, &tw, &th);
+                  fprintf(stderr, "  [box] prog=%u fvf=0x%x nv=%u tex=%u (%ux%u%s):", g_cur_vs, g_cur_fvf, nv, g_cur_tex, tw, th, g_cur_tex < 16384u && rtd[g_cur_tex] ? " render target" : ""); }
                   for (uint32_t q = 0; q < nv && q < 6; q++){
                       float w2 = tv[q].w ? tv[q].w : 1.f;
                       fprintf(stderr, " (%.0f,%.0f uv %.3f,%.3f / %.3f,%.3f)", (tv[q].x / w2 * .5f + .5f) * g_bb_w, (.5f - tv[q].y / w2 * .5f) * g_bb_h,
                               tv[q].t[0][0], tv[q].t[0][1], tv[q].t[1][0], tv[q].t[1][1]); }
                   fprintf(stderr, "\n"); break; } } } }
+    /* TEXID: draws INTO one of those textures (a render target) */
+    if (g_cur_rt && g_cur_rt < 16384u) rtd[g_cur_rt] = 1;
+    if (g_cur_rt && nv && (texid_on(g_cur_rt) || ENVC("RTDRAWLOG"))){ static int tn2; static uint32_t sk[64]; static int nsk;
+      uint32_t key = g_cur_tex * 2654435761u ^ g_cur_fvf ^ (g_cur_vs << 20) ^ (nv << 8) ^ g_cur_rt; int dup = 0;
+      for (int q = 0; q < nsk; q++) if (sk[q] == key) dup = 1;
+      if (!dup && nsk < 64){ sk[nsk++] = key; } else dup = 1;
+      if (!dup && tn2++ < 80){
+        unsigned rw = 0, rh = 0; void metal_tex_size(unsigned, unsigned *, unsigned *); metal_tex_size(g_cur_rt, &rw, &rh);
+        int vr[4]; int ffp_viewport_rect(int *); int hv = ffp_viewport_rect(vr);
+        fprintf(stderr, "  [texid] draw into %u (%ux%u) vp=%s%d,%d-%d,%d prog=%u fvf=0x%x nv=%u tex=%u:", g_cur_rt, rw, rh, hv ? "" : "full ", hv ? vr[0] : 0, hv ? vr[1] : 0, hv ? vr[2] : (int)rw, hv ? vr[3] : (int)rh, g_cur_vs, g_cur_fvf, nv, g_cur_tex);
+        for (uint32_t q = 0; q < nv && q < 4; q++){ float w2 = tv[q].w ? tv[q].w : 1.f;
+            fprintf(stderr, " (%.1f,%.1f uv %.3f,%.3f)", (tv[q].x / w2 * .5f + .5f) * rw, (.5f - tv[q].y / w2 * .5f) * rh, tv[q].t[0][0], tv[q].t[0][1]); }
+        fprintf(stderr, "\n"); } }
     /* VPLOG=1: draws under a viewport smaller than the target (CMR5 pace-note
      * box): the path and the first vertices in clip space */
     { static int vl = -1, vn = 0; if (vl < 0) vl = ENVC("VPLOG") ? 1 : 0;
@@ -3556,7 +3595,8 @@ int com_call(CPU *c, uint32_t magic){
                  * SetViewport; the last small viewport cut it to a corner) */
                 { void ffp_device_size(unsigned, unsigned); void metal_tex_size(unsigned, unsigned *, unsigned *);
                   unsigned tw = g_bb_w, th = g_bb_h; if (tid) metal_tex_size(tid, &tw, &th);
-                  ffp_device_size(tw, th); }
+                  ffp_device_size(tw, th);
+                  g_sc_rect[0] = g_sc_rect[1] = 0; g_sc_rect[2] = (int)tw; g_sc_rect[3] = (int)th; g_sc_ok = 1; }   /* and the scissor rectangle */
                 if (tid) g_rt_set++; else g_rt_screen++;
             }
             r=0; }
@@ -3590,6 +3630,12 @@ int com_call(CPU *c, uint32_t magic){
                             MRF32(mp+rw*16), MRF32(mp+rw*16+4),
                             MRF32(mp+rw*16+8), MRF32(mp+rw*16+12));
             }
+            r=0; }
+        else if (MID(SetScissorRect)){                  /* (this, const RECT *) */
+            uint32_t pr = A(c,1);
+            if (pr && mem_is_committed(pr+15)){
+                for (int k = 0; k < 4; k++) g_sc_rect[k] = (int)MR32(pr + 4u*k);
+                g_sc_ok = 1; }
             r=0; }
         else if (MID(SetViewport)){
             static int nv2=0;
@@ -3715,6 +3761,9 @@ int com_call(CPU *c, uint32_t magic){
                 /* D3DUSAGE_RENDERTARGET = 1 */
                 uint32_t tid = metal_create_texture_ex(mw,mh,mlev,fmt,(usage & 1u)?1u:0u);
                 MR32(t+28)=tid;
+                { if (texid_on(tid))
+                    fprintf(stderr, "  [texid] %u created: %ux%u levels=%u (asked %u) fmt=%u (0x%x) usage=0x%x pool=%u obj=0x%08x caller=0x%08x\n",
+                            tid, w, h, mlev, lev, fmt, fmt, usage, pool, t, c->eip); }
                 if (ekind == ENH_ROAD && tid){ void metal_hd_mark_road(unsigned,unsigned,unsigned);
                                                metal_hd_mark_road(tid, w, h); }
                 if ((usage & 1u) && ENVC("RTIDLOG"))
@@ -4122,6 +4171,22 @@ int com_call(CPU *c, uint32_t magic){
                     metal_upload_texture(mid, sl, g_mem+buf, metal_level_pitch(pw,sl,fmt), pw, ph, fmt);
                 }
                 w = 0;                                      /* uploaded: not again below */
+            }
+            { if (mid && texid_on(mid)){
+                static int tn; if (tn++ < 40){ uint32_t nz = 0, sum = 0, n = buf ? metal_level_pitch(w ? w : 1, level, fmt) * 4u : 0;
+                    for (uint32_t q = 0; q < n; q++){ nz += g_mem[buf + q] != 0; sum = sum * 31u + g_mem[buf + q]; }
+                    fprintf(stderr, "  [texid] %u UnlockRect iface=%u level=%u %ux%u fmt=%u pitch=%u buf=0x%08x first4rows nz=%u sum=%08x caller=0x%08x\n",
+                            mid, iface, level, w, h, fmt, w ? metal_level_pitch(w,level,fmt) : 0u, buf, nz, sum, c->eip); } } }
+            /* TEXDUMP=1 with TEXID: level 0 of those textures as hex lines in the log
+             * (tools: rebuild a DDS from "[texdump]" lines) */
+            if (mid && buf && w && h && level == 0 && texid_on(mid) && ENVC("TEXDUMP")){
+                uint32_t n = metal_level_pitch(w,0,fmt) * metal_level_rows(h,0,fmt);
+                fprintf(stderr, "  [texdump] %u begin %u %u %u %u\n", mid, w, h, fmt, n);
+                static const char hx[] = "0123456789abcdef"; char line[300];
+                for (uint32_t o = 0; o < n; o += 128){
+                    int k = 0; for (uint32_t q = o; q < o + 128 && q < n; q++){ uint8_t v = g_mem[buf + q]; line[k++] = hx[v >> 4]; line[k++] = hx[v & 15]; }
+                    line[k] = 0; fprintf(stderr, "  [texdump] %u %u %s\n", mid, o, line); }
+                fprintf(stderr, "  [texdump] %u end\n", mid);
             }
             if (metal_available() && mid && buf && w && h)
                 metal_upload_texture(mid, level, g_mem+buf,
