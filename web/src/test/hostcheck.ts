@@ -33,7 +33,8 @@ if (gpu) {
 const posting = q.has('logpost');
 let outq: string[] = ['@@start ' + new Date().toISOString() + ' ' + location.search];
 const flush = () => { if (!posting || !outq.length) return; const body = outq.join('\n') + '\n'; outq = [];
-  fetch('/log', { method: 'POST', body, keepalive: true }).catch(() => {}); };
+  // keepalive bodies are limited to 64 KB: a larger batch (a texture dump) goes without it
+  fetch('/log', { method: 'POST', body, keepalive: body.length < 60000 }).catch(() => {}); };
 if (posting) setInterval(flush, 500);
 const log = (s: string) => { pre.append(s + '\n'); console.log(s); if (posting) outq.push(s); };
 const t0 = performance.now();

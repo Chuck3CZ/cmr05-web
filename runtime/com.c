@@ -1706,6 +1706,16 @@ static int texid_on(uint32_t id){
 }
 static uint8_t rtd[16384];   /* render targets drawn into (BOXLOG) */
 static int g_sc_rect[4], g_sc_ok;   /* SetScissorRect (left, top, right, bottom) */
+/* BOXDUMP: the level-0 data each texture was last given (UnlockRect) */
+static struct { uint32_t buf, w, h, fmt; } g_tl0[16384];
+static void hexdump_tex(uint32_t tid, const uint8_t *p, uint32_t n, uint32_t w, uint32_t h, uint32_t fmt, const char *kind){
+    fprintf(stderr, "  [texdump] %u begin %u %u %u %u %s\n", tid, w, h, fmt, n, kind);
+    static const char hx[] = "0123456789abcdef"; char line[300];
+    for (uint32_t o = 0; o < n; o += 128){
+        int k = 0; for (uint32_t q = o; q < o + 128 && q < n; q++){ line[k++] = hx[p[q] >> 4]; line[k++] = hx[p[q] & 15]; }
+        line[k] = 0; fprintf(stderr, "  [texdump] %u %u %s\n", tid, o, line); }
+    fprintf(stderr, "  [texdump] %u end\n", tid);
+}
 static int draw_up(uint32_t pt, uint32_t nv, uint32_t vp, uint32_t stride){
     uint64_t _t0 = now_ns();
     static TVert tv[4096];
@@ -1939,6 +1949,18 @@ static int draw_up(uint32_t pt, uint32_t nv, uint32_t vp, uint32_t stride){
                   if (dup || ns >= 128) break;
                   seen[ns++] = key; bn++;
                   { unsigned tw = 0, th = 0; void metal_tex_size(unsigned, unsigned *, unsigned *); if (g_cur_tex) metal_tex_size(g_cur_tex, &tw, &th);
+                    static long bdn = -2; static int bdone; if (bdn == -2){ const char *e = ENVC("BOXDUMP"); bdn = e ? atol(e) : -1; }
+                    static uint32_t dumped[6]; int dd = 0; for (int q = 0; q < bdone; q++) if (dumped[q] == g_cur_tex) dd = 1;
+                    if (bdn >= 0 && !dd && bdone < 6 && tw == 256u && th == 256u){ dumped[bdone++] = g_cur_tex;
+                        if (g_cur_tex < 16384u && rtd[g_cur_tex]){
+                            static uint8_t px[256*256*4]; int metal_read_texture(unsigned, void *, unsigned, unsigned);
+                            uint32_t tmp = gbuf_alloc(256u*256u*4u);
+                            if (tmp && metal_read_texture(g_cur_tex, g_mem + tmp, 1024u, 256u)){ memcpy(px, g_mem + tmp, sizeof px); hexdump_tex(g_cur_tex, px, sizeof px, 256, 256, 21, "rt-bgra"); }
+                            else fprintf(stderr, "  [texdump] %u render target: no readback\n", g_cur_tex);
+                        } else if (g_cur_tex < 16384u && g_tl0[g_cur_tex].buf){
+                            uint32_t n = metal_level_pitch(g_tl0[g_cur_tex].w, 0, g_tl0[g_cur_tex].fmt) * metal_level_rows(g_tl0[g_cur_tex].h, 0, g_tl0[g_cur_tex].fmt);
+                            hexdump_tex(g_cur_tex, g_mem + g_tl0[g_cur_tex].buf, n, g_tl0[g_cur_tex].w, g_tl0[g_cur_tex].h, g_tl0[g_cur_tex].fmt, "upload");
+                        } else fprintf(stderr, "  [texdump] %u: no data known\n", g_cur_tex); }
                   fprintf(stderr, "  [box] prog=%u fvf=0x%x nv=%u tex=%u (%ux%u%s):", g_cur_vs, g_cur_fvf, nv, g_cur_tex, tw, th, g_cur_tex < 16384u && rtd[g_cur_tex] ? " render target" : ""); }
                   for (uint32_t q = 0; q < nv && q < 6; q++){
                       float w2 = tv[q].w ? tv[q].w : 1.f;
@@ -4210,6 +4232,7 @@ int com_call(CPU *c, uint32_t magic){
                     line[k] = 0; fprintf(stderr, "  [texdump] %u %u %s\n", mid, o, line); }
                 fprintf(stderr, "  [texdump] %u end\n", mid);
             }
+            if (mid && mid < 16384u && buf && w && h && level == 0){ g_tl0[mid].buf = buf; g_tl0[mid].w = w; g_tl0[mid].h = h; g_tl0[mid].fmt = fmt; }
             if (metal_available() && mid && buf && w && h)
                 metal_upload_texture(mid, level, g_mem+buf,
                                      metal_level_pitch(w,level,fmt), w, h, fmt);
