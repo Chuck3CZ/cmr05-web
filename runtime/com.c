@@ -1705,7 +1705,7 @@ static int draw_up(uint32_t pt, uint32_t nv, uint32_t vp, uint32_t stride){
     vsk = aspect_apply(vsk, prog);
 #ifdef __wasm__
     { void metal_set_ui_clip(float); metal_set_ui_clip(g_ui_clip); }
-    if (!prog && g_cur_fvf){ int ffp_viewport_rect(int *); void metal_set_vp_clip(int, int, int, int);
+    if (prog || g_cur_fvf){ int ffp_viewport_rect(int *); void metal_set_vp_clip(int, int, int, int);
         int vr[4]; if (ffp_viewport_rect(vr)) metal_set_vp_clip(vr[0], vr[1], vr[2], vr[3]); }
 #endif
 
@@ -1871,6 +1871,7 @@ static int draw_up(uint32_t pt, uint32_t nv, uint32_t vp, uint32_t stride){
                    vs_run(prog, vsk, (const float (*)[4])v, &so);
                    g_t_vs_ns += now_ns() - _v0; }
             out->x=so.pos[0]; out->y=so.pos[1]; out->z=so.pos[2]; out->w=so.pos[3];
+            { void ffp_vp_apply(TVert *); ffp_vp_apply(out); }
             out->r=so.col[0][0]; out->g=so.col[0][1];
             out->b=so.col[0][2]; out->a=so.col[0][3];
             out->r1=so.col[1][0]; out->g1=so.col[1][1];

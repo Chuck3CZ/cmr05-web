@@ -69,6 +69,9 @@ static void vp_apply(TVert *o){
     o->y = o->y * sy + o->w * oy;
     o->z = o->z * (g_vp[5] - g_vp[4]) + o->w * g_vp[4];
 }
+/* com.c: a vertex shader's output (clip space of the viewport) gets the same
+ * viewport transform (CMR5 draws its pace-note arrows into a small viewport) */
+void ffp_vp_apply(TVert *o){ vp_apply(o); }
 static int   g_rs_init = 0;
 
 static void rs_defaults(void){

@@ -740,14 +740,20 @@ int win32_call(CPU *c, uint32_t idx){
     /* (callback, context): one device, the primary driver (lpGuid NULL), as
      * Windows lists it first.  CMR5 makes no sound without a device here. */
     else if (!strcmp(n,"DirectSoundEnumerateA")){
-        static uint32_t desc = 0, mod = 0;
+        /* then the device itself with its GUID: CMR5's callback counts only
+         * a device with a GUID (lpGuid != NULL), else its sound stays off */
+        static uint32_t desc = 0, mod = 0, desc2 = 0, guid = 0;
         if (!desc){ desc = gheap_alloc(1, 32, 1); strcpy((char *)(g_mem + desc), "Primary Sound Driver");
-                    mod = gheap_alloc(1, 4, 1); }
+                    desc2 = gheap_alloc(1, 32, 1); strcpy((char *)(g_mem + desc2), "Browser audio (Web Audio)");
+                    mod = gheap_alloc(1, 16, 1); strcpy((char *)(g_mem + mod), "wdmaud.drv");
+                    guid = gheap_alloc(1, 16, 1);
+                    MR32(guid) = 0xBD6DD71Au; MR32(guid+4) = 0x11D03E8Cu; MR32(guid+8) = 0xC0001F9Au; MR32(guid+12) = 0x1D00A04Fu; }
         uint32_t cb = ARG(c,0), ctx = ARG(c,1);
-        if (cb){ const uint32_t args[4] = { 0u, desc, mod, ctx };
+        if (cb){ const uint32_t args[4] = { 0u, desc, mod, ctx }, args2[4] = { guid, desc2, mod, ctx };
             uint32_t call_guest(CPU *c, uint32_t fn, int nargs, const uint32_t *args);
             uint32_t more = call_guest(c, cb, 4, args);
-            fprintf(stderr, "[dsound] DirectSoundEnumerateA: the primary driver listed (callback 0x%08x -> %u)\n", cb, more); }
+            if (more) more = call_guest(c, cb, 4, args2);
+            fprintf(stderr, "[dsound] DirectSoundEnumerateA: the primary driver and one device listed (callback 0x%08x -> %u)\n", cb, more); }
         r = 0; }
     else if (!strcmp(n,"SetConsoleCtrlHandler")) r = 1;
     else if (!strcmp(n,"RtlUnwind"))             r = 0;
