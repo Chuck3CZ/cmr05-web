@@ -3529,9 +3529,12 @@ int com_call(CPU *c, uint32_t magic){
                 uint32_t face = (surf && mem_is_committed(surf+47)) ? MR32(surf+44) : 0u;
                 g_cur_rt = tid;
                 metal_set_render_target(tid | ((face & 7u) << 16));
-                { void ffp_set_target_size(unsigned, unsigned); void metal_tex_size(unsigned, unsigned *, unsigned *);
+                /* D3D9: a new render target sets the viewport to all of it (CMR5
+                 * draws its pace-note arrow into a 256x256 target without a
+                 * SetViewport; the last small viewport cut it to a corner) */
+                { void ffp_device_size(unsigned, unsigned); void metal_tex_size(unsigned, unsigned *, unsigned *);
                   unsigned tw = g_bb_w, th = g_bb_h; if (tid) metal_tex_size(tid, &tw, &th);
-                  ffp_set_target_size(tw, th); }
+                  ffp_device_size(tw, th); }
                 if (tid) g_rt_set++; else g_rt_screen++;
             }
             r=0; }

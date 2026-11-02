@@ -131,7 +131,7 @@ static void update_rate_ratio(void){
 #define PACE       1.05          /* ring mode: slices at most this much faster than real time (the target caps it) */
 #define CATCHUP_S  0.03          /* ... and at most this much made up at once after the pump was late */
 
-#define MAXSND 128
+#define MAXSND 1024              /* CMR5 keeps ~130 sounds loaded in a race (co-driver words) */
 #define SETTLE_SLICES 90          /* ~1 s: a stream's start (a cleared buffer) is no glitch */
 typedef struct {
     uint32_t data, bytes, rate, chans, bits;
@@ -159,7 +159,9 @@ static int    g_sndn = 1;                    /* 0 = no slot */
 static int    g_sndfree[MAXSND], g_nsndfree = 0;
 static int snd_new_id(void){                  /* g_slock held */
     if (g_nsndfree) return g_sndfree[--g_nsndfree];
-    return g_sndn < MAXSND ? g_sndn++ : 0;
+    if (g_sndn < MAXSND) return g_sndn++;
+    { static int said; if (!said++) fprintf(stderr, "  [sound] WARNING: all %d mixer slots in use: a new buffer stays silent\n", MAXSND - 1); }
+    return 0;
 }
 static pthread_mutex_t g_slock = PTHREAD_MUTEX_INITIALIZER;
 static int g_audio_on = 0;                   /* the output is wanted (not NOSOUND) */
@@ -503,10 +505,10 @@ static void mix_into(float *out, unsigned frames){
                 if (!g_snd[i2].used) continue;
                 uint32_t nz = 0, lim = g_snd[i2].bytes < 8192u ? g_snd[i2].bytes : 8192u;
                 for (uint32_t q = 0; q < lim; q++) if (g_mem[g_snd[i2].data + q]) nz++;
-                fprintf(stderr, "#%d[%s%s %uHz data=%u%%] ", i2,
+                fprintf(stderr, "#%d[%s%s %uHz v=%.2f f=%.2f plays=%llu data=%u%%] ", i2,
                         g_snd[i2].playing ? "play" : "stop",
                         g_snd[i2].loop ? "+loop" : "",
-                        g_snd[i2].rate, lim ? (unsigned)(100u*nz/lim) : 0u);
+                        g_snd[i2].rate, (double)g_snd[i2].vol, g_snd[i2].freq, (unsigned long long)g_snd[i2].plays, lim ? (unsigned)(100u*nz/lim) : 0u);
             }
             fprintf(stderr, "\n");
             pthread_mutex_unlock(&g_slock);
