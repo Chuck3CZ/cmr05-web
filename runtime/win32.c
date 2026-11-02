@@ -323,6 +323,24 @@ int win32_caller_module(void){ return 0; }
 /* WC3_CRYPTWATCH=1 (debugging): Storm's MPQ crypt table ([0x54c2e4], first
  * word 0x55c636e2) checked at every import call; the first call that finds it
  * changed is logged with the guest stack. */
+/* the guest's environment variables (GetEnvironmentVariableA) */
+#define ENV_MAX 32
+static struct { char name[128]; char *val; } g_env[ENV_MAX];
+static const char *env_get(const char *nm){
+    for (int k = 0; k < ENV_MAX; k++) if (g_env[k].val && !strcasecmp(g_env[k].name, nm)) return g_env[k].val;
+    return 0;
+}
+static void env_set(const char *nm, const char *v){
+    int f = -1;
+    for (int k = 0; k < ENV_MAX; k++){
+        if (g_env[k].val && !strcasecmp(g_env[k].name, nm)){ f = k; break; }
+        if (!g_env[k].val && f < 0) f = k;
+    }
+    if (f < 0 || strlen(nm) >= sizeof g_env[0].name) return;
+    free(g_env[f].val); g_env[f].val = 0;
+    if (v){ snprintf(g_env[f].name, sizeof g_env[f].name, "%s", nm); g_env[f].val = strdup(v); }
+}
+
 /* RT_VERSION of a PE file in the game folder: its size in *len, copied to
  * guest dst (at most *len bytes) when dst != 0.  1 if found. */
 int fileio_resolve_game(const char *win, char *out, size_t outsz);
@@ -558,8 +576,22 @@ int win32_call(CPU *c, uint32_t idx){
         if (!w){ const char *a = (const char *)(g_mem + g_cmdline); uint32_t l = (uint32_t)strlen(a);
             w = gheap_alloc(1, 2*l + 2, 1); for (uint32_t k = 0; k <= l; k++) MR16(w + 2*k) = (uint8_t)a[k]; }
         r = w; }
-    else if (!strcmp(n,"GetEnvironmentVariableA")){            /* (name, buf, size): the game's environment is empty */
-        win32_set_last_error(c, 203u); r = 0; }               /* ERROR_ENVVAR_NOT_FOUND */
+    /* The process environment: empty at start, what the game sets itself
+     * (CMR5's Intel OpenMP registers its library in __KMP_REGISTERED_LIB_<pid>
+     * and reads it back, or aborts) */
+    else if (!strcmp(n,"GetEnvironmentVariableA")){            /* (name, buf, size) */
+        const char *v = env_get((const char *)(g_mem + ARG(c,0)));
+        uint32_t buf = ARG(c,1), size = ARG(c,2);
+        if (!v){ win32_set_last_error(c, 203u); r = 0; }      /* ERROR_ENVVAR_NOT_FOUND */
+        else { uint32_t l = (uint32_t)strlen(v);
+            if (l < size && buf){ memcpy(g_mem + buf, v, l + 1); r = l; } else r = l + 1; } }
+    else if (!strcmp(n,"SetEnvironmentVariableA")){            /* (name, value or NULL) */
+        env_set((const char *)(g_mem + ARG(c,0)), ARG(c,1) ? (const char *)(g_mem + ARG(c,1)) : 0); r = 1; }
+    else if (!strcmp(n,"SetEnvironmentVariableW")){
+        char nm[256], val[1024]; uint32_t a = ARG(c,0), b = ARG(c,1); int k;
+        for (k = 0; k < 255 && MR16(a + 2*k); k++) nm[k] = (char)MR16(a + 2*k); nm[k] = 0;
+        if (b){ for (k = 0; k < 1023 && MR16(b + 2*k); k++) val[k] = (char)MR16(b + 2*k); val[k] = 0; }
+        env_set(nm, b ? val : 0); r = 1; }
     /* VERSION.dll: the RT_VERSION resource of a file in the game folder (CMR5
      * checks its Math*.dll are v1.06); VerQueryValueA knows "\\" alone */
     else if (!strcmp(n,"GetFileVersionInfoSizeA")){            /* (path, handle*) */

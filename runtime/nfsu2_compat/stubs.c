@@ -57,7 +57,4 @@ uint32_t dipad_call(CPU *c, uint32_t self, const char *nm, int nargs, const uint
 uint32_t dipad_effect_call(CPU *c, uint32_t self, const char *nm, int nargs, const uint32_t *args){
     (void)c; (void)self; (void)nm; (void)nargs; (void)args; return 0x80004005u; }
 void     dipad_effect_free(uint32_t obj){ (void)obj; }
-void     dikbd_created(uint32_t dev){ (void)dev; }
-void     dikbd_report(void){ }
-uint32_t dikbd_call(CPU *c, uint32_t self, const char *nm, int nargs, const uint32_t *args){
-    (void)c; (void)self; (void)nargs; (void)args; fprintf(stderr, "[compat] DirectInput keyboard %s: none\n", nm); return 0x80004005u; }
+/* the DirectInput keyboard: runtime/dinput_kbd.c */

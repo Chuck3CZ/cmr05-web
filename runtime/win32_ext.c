@@ -35,7 +35,7 @@ typedef struct {
      * TerminateThread request it honours at its next import call */
     uint32_t exit_code; int ended; volatile int term_req;
     int closed;                       /* OB_THREAD: last handle closed while it still ran */
-    uint32_t teb, stack_lo;           /* OB_THREAD: recycled when the thread ends */
+    uint32_t teb, stack_lo, stack_sz; /* OB_THREAD: recycled when the thread ends */
 } Obj;
 /* v12na: 4096 (was 512).  The game never closes the handle of the thread it
  * starts for every race load, so one slot per load stays in use (measured:
@@ -839,7 +839,7 @@ static uint32_t obj_new(ObKind k){
         pthread_mutex_lock(&o->mtx);
         o->signaled = 0; o->manual = 0; o->guest_arg = o->guest_entry = o->tid = 0;
         o->owner_tid = 0; o->rec = 0; o->started = 0; o->pending = 0; o->name[0] = 0;
-        o->exit_code = 0; o->ended = 0; o->term_req = 0; o->closed = 0; o->teb = o->stack_lo = 0;
+        o->exit_code = 0; o->ended = 0; o->term_req = 0; o->closed = 0; o->teb = o->stack_lo = o->stack_sz = 0;
         o->refs = 1; o->kind = k;
         pthread_mutex_unlock(&o->mtx);
     } else {
@@ -916,7 +916,7 @@ uint64_t g_threads_started = 0, g_threads_exited = 0;
  * loads a new thread's TEB would have landed on the timer thread's, and the
  * stacks would eventually have run into the main stack at 0x7F000000. */
 #define TEB_TIMER 0x00C60000u
-static uint32_t g_teb_free[256], g_stk_free[256]; static int g_nteb_free = 0, g_nstk_free = 0;
+static uint32_t g_teb_free[256], g_stk_free[256], g_stk_free_sz[256]; static int g_nteb_free = 0, g_nstk_free = 0;
 static uint32_t g_teb_next = 0x00C20000u;
 static uint64_t g_teb_reused = 0;
 static uint32_t teb_take(void){                       /* g_lock held */
@@ -925,10 +925,27 @@ static uint32_t teb_take(void){                       /* g_lock held */
     uint32_t t = g_teb_next; g_teb_next += 0x2000u;
     return t;
 }
-static uint32_t stack_take(void){                     /* g_lock held */
-    if (g_nstk_free) return g_stk_free[--g_nstk_free];
-    uint32_t s0 = g_tstack_next; g_tstack_next += GTHREAD_STACK;
+/* a stack of sz bytes (CreateThread's dwStackSize, at least 1 MB): CMR5's
+ * Intel OpenMP checks that its workers' stacks of the size it asked for do
+ * not overlap ("OMP abort: stack overlap detected") */
+static uint32_t stack_take(uint32_t sz){              /* g_lock held */
+    for (int k = g_nstk_free - 1; k >= 0; k--)
+        if (g_stk_free_sz[k] == sz){
+            uint32_t s0 = g_stk_free[k];
+            g_stk_free[k] = g_stk_free[g_nstk_free - 1]; g_stk_free_sz[k] = g_stk_free_sz[g_nstk_free - 1]; g_nstk_free--;
+            return s0;
+        }
+    uint32_t s0 = g_tstack_next; g_tstack_next += sz;
+#ifdef __wasm__
+    if (g_tstack_next > 0x08000000u) fprintf(stderr, "[thread] WARNING: thread stacks run into the heap (0x%08x)\n", g_tstack_next);
+#endif
     return s0;
+}
+static uint32_t stack_size_for(uint32_t want){
+    uint32_t sz = (want + GTHREAD_STACK - 1u) & ~(GTHREAD_STACK - 1u);
+    if (sz < GTHREAD_STACK) sz = GTHREAD_STACK;
+    if (sz > 8u * GTHREAD_STACK) sz = 8u * GTHREAD_STACK;
+    return sz;
 }
 static void thread_report(void){
     fprintf(stderr, "  threads           : %llu started, %llu ended; TEBs %llu reused (next 0x%08x), %d stacks free;"
@@ -965,9 +982,9 @@ static void thread_finish(Obj *o, uint32_t code, CPU *c){
           fprintf(stderr, "[thread] tid=%u (%s, entry 0x%08x) ended, exit code %u\n", o->tid, mn, o->guest_entry, code); }
     pthread_mutex_lock(&g_lock);
     if (o->teb && g_nteb_free < 256) g_teb_free[g_nteb_free++] = o->teb;
-    if (o->stack_lo && g_nstk_free < 256) g_stk_free[g_nstk_free++] = o->stack_lo;
+    if (o->stack_lo && g_nstk_free < 256){ g_stk_free[g_nstk_free] = o->stack_lo; g_stk_free_sz[g_nstk_free++] = o->stack_sz ? o->stack_sz : GTHREAD_STACK; }
     pthread_mutex_unlock(&g_lock);
-    o->teb = o->stack_lo = 0;
+    o->teb = o->stack_lo = o->stack_sz = 0;
     pthread_mutex_lock(&o->mtx);
     o->exit_code = code; o->ended = 1; o->signaled = 1;
     pthread_cond_broadcast(&o->cv);
@@ -978,7 +995,7 @@ static void thread_finish(Obj *o, uint32_t code, CPU *c){
         pthread_mutex_lock(&g_lock); g_free[g_nfree++] = (int)(o - g_obj); pthread_mutex_unlock(&g_lock); }
 }
 
-typedef struct { uint32_t entry, arg, teb; Obj *ob; } TArg;
+typedef struct { uint32_t entry, arg, teb, stack_sz; Obj *ob; } TArg;
 
 void mem_altstack_install(void);
 /* Guest threads need a BIG stack: in lifted code every guest call is a host
@@ -1010,10 +1027,11 @@ static void *guest_thread_main(void *p){
     CPU cpu; memset(&cpu,0,sizeof cpu);
     uint32_t stack_lo, stack_hi;
     pthread_mutex_lock(&g_lock);
-    stack_lo = stack_take(); stack_hi = stack_lo + GTHREAD_STACK;
+    uint32_t ssz = t->stack_sz ? t->stack_sz : GTHREAD_STACK;
+    stack_lo = stack_take(ssz); stack_hi = stack_lo + ssz;
     pthread_mutex_unlock(&g_lock);
-    if (t->ob) t->ob->stack_lo = stack_lo;
-    mem_commit(stack_lo, GTHREAD_STACK);
+    if (t->ob){ t->ob->stack_lo = stack_lo; t->ob->stack_sz = ssz; }
+    mem_commit(stack_lo, ssz);
     cpu.esp = stack_hi - 0x1000u;
     cpu.top = 0; cpu.fcw = 0x027f;   /* Windows default: PC=53, RC near, masked */
     cpu.fs_base = t->teb; cpu.gs_base = t->teb;
@@ -1695,7 +1713,7 @@ int win32_ext_call(CPU *c, const char *n, uint32_t *out){
             o->teb = teb;
             mem_commit(teb, 0x2000);
             TArg *t = calloc(1,sizeof *t);
-            t->entry=entry; t->arg=arg; t->teb=teb; t->ob=o;
+            t->entry=entry; t->arg=arg; t->teb=teb; t->ob=o; t->stack_sz=stack_size_for(A(c,1));
             o->pending = t;
             if (A(c,4) & 0x4u){                 /* CREATE_SUSPENDED */
                 o->started = 0;                 /* waits for ResumeThread */
@@ -1886,7 +1904,7 @@ int win32_ext_call(CPU *c, const char *n, uint32_t *out){
     else if (!strcmp(n,"FreeResource"))  r = 1;
     else if (!strcmp(n,"GetSystemInfo")){
         uint32_t p=A(c,0); if(p){ mem_commit(p,36); memset(g_mem+p,0,36);
-            MR32(p+4)=4096; MR32(p+20)=10; MR32(p+32)=0x000006d8; } r=0; }
+            MR32(p+4)=4096; MR32(p+24)=0xFu; MR32(p+20)=4; MR32(p+32)=0x000006d8; }   /* 4 CPUs: CMR5 starts an OpenMP worker per CPU */ r=0; }
     else if (!strcmp(n,"GlobalMemoryStatus")){
         uint32_t p=A(c,0); if(p){ mem_commit(p,32); memset(g_mem+p,0,32);
             MR32(p)=32; MR32(p+4)=50; MR32(p+8)=0x40000000u; MR32(p+12)=0x20000000u; } r=0; }
