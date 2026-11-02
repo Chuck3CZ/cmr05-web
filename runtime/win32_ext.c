@@ -1798,7 +1798,11 @@ int win32_ext_call(CPU *c, const char *n, uint32_t *out){
           nanosleep(&ts,0); }
         guest_yield_end();
         r=0; }
-    else if (!strcmp(n,"WaitForMultipleObjects")){
+    /* MsgWaitForMultipleObjects (USER32): the same first four arguments; a
+     * window message does not end the wait here (CMR5 sound thread: five
+     * DirectSound events, INFINITE).  It was missing and returned 0, as if
+     * the first event were set: that thread spun and served no other event. */
+    else if (!strcmp(n,"WaitForMultipleObjects") || !strcmp(n,"MsgWaitForMultipleObjects")){
         /* Polls every 1 ms until ready or the timeout (INFINITE waits for
          * good: it used to give up after 200 ms).  A mutex it takes gets its
          * owner, as with WaitForSingleObject; without one the owner's
@@ -1843,6 +1847,25 @@ int win32_ext_call(CPU *c, const char *n, uint32_t *out){
             fprintf(stderr, "[mutex] WaitForMultipleObjects(%u, all=%u, %u ms) incl. 0x%08x by tid %u from 0x%08x -> 0x%x\n",
                     cnt, waitall, ms, MR32(parr+4u*i), me, c->eip, got);
         r=got; }
+    /* (locale, flags, s1, n1, s2, n2): CSTR_LESS_THAN 1 / EQUAL 2 / GREATER 3,
+     * NORM_IGNORECASE (1) honoured; byte order otherwise (0 was "failed") */
+    else if (!strcmp(n,"CompareStringA") || !strcmp(n,"CompareStringW")){
+        int w = n[13] == 'W'; uint32_t fl = A(c,1), p1 = A(c,2), p2 = A(c,4);
+        int32_t n1 = (int32_t)A(c,3), n2 = (int32_t)A(c,5);
+        uint32_t cs = w ? 2u : 1u;
+        if (n1 < 0){ n1 = 0; while ((w ? MR16(p1 + cs*n1) : MR8(p1 + n1))) n1++; }
+        if (n2 < 0){ n2 = 0; while ((w ? MR16(p2 + cs*n2) : MR8(p2 + n2))) n2++; }
+        int res = 0;
+        for (int32_t k = 0; !res && k < n1 && k < n2; k++){
+            uint32_t a1 = w ? MR16(p1 + cs*k) : MR8(p1 + k), b1 = w ? MR16(p2 + cs*k) : MR8(p2 + k);
+            if (fl & 1u){ if (a1 >= 'a' && a1 <= 'z') a1 -= 32; if (b1 >= 'a' && b1 <= 'z') b1 -= 32; }
+            res = a1 < b1 ? -1 : a1 > b1 ? 1 : 0;
+        }
+        if (!res) res = n1 < n2 ? -1 : n1 > n2 ? 1 : 0;
+        r = (uint32_t)(res + 2); }
+    /* (action, uiParam, pvParam, fWinIni): success, nothing changed (the
+     * GET actions see the zeros the caller set: sticky keys off, ...) */
+    else if (!strcmp(n,"SystemParametersInfoA")) r = 1;
     else if (!strcmp(n,"SwitchToThread")){ guest_yield_begin(); sched_yield(); guest_yield_end(); r=1; }
     else if (!strcmp(n,"CloseHandle")){ obj_close(A(c,0)); r=1; }
     else if (!strcmp(n,"DuplicateHandle")){ uint32_t p=A(c,3); if(p) MR32(p)=A(c,1);
