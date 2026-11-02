@@ -372,3 +372,17 @@ void ffp_report(void){
     fprintf(stderr, "  fixed function    : %llu vertices (%llu pretransformed, %llu lit)\n",
             (unsigned long long)g_n_ff, (unsigned long long)g_n_rhw, (unsigned long long)g_n_lit);
 }
+
+/* com.c: a vertex declaration's position under the fixed function pipeline */
+void ffp_decl_pos(const float *p, int pretransformed, TVert *o){
+    if (pretransformed){
+        float rhw = p[3], w = (rhw > 1e-20f) ? 1.f / rhw : 1.f;
+        o->x = ((p[0] / g_rtw) * 2.f - 1.f) * w; o->y = (1.f - (p[1] / g_rth) * 2.f) * w; o->z = p[2] * w; o->w = w;
+        return;
+    }
+    if (g_dirty){ mul(g_wv, g_m[0], g_m[1]); mul(g_wvp, g_wv, g_m[2]); g_dirty = 0; }
+    float in[4] = { p[0], p[1], p[2], 1.f }, c[4];
+    xform(c, in, g_wvp);
+    o->x = c[0]; o->y = c[1]; o->z = c[2]; o->w = c[3];
+    vp_apply(o);
+}

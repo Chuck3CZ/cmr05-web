@@ -1748,7 +1748,7 @@ static int draw_up(uint32_t pt, uint32_t nv, uint32_t vp, uint32_t stride){
      * elements from guest memory and testing each with mem_is_committed
      * (~1300 times per frame).  Safe: declaration objects are copied when
      * created and never change, and com_alloc does not reuse addresses. */
-    static struct { uint32_t decl; const VSProg *prog; int nel, p_off, p_type, c_off, c_type,
+    static struct { uint32_t decl; const VSProg *prog; int pos_kind, nel, p_off, p_type, c_off, c_type,
                     t_off, t_type, ok; DElem el[16]; } dcc[64];
     uint32_t d = g_cur_decl;
     unsigned dci = (unsigned)(((uintptr_t)prog >> 4) ^ (d >> 3) ^ (d >> 11)) & 63u;
@@ -1756,6 +1756,7 @@ static int draw_up(uint32_t pt, uint32_t nv, uint32_t vp, uint32_t stride){
     if (dlog || !dcc[dci].ok || dcc[dci].decl != d || dcc[dci].prog != prog){
     DElem el[16]; int nel = 0;
     int p_off = -1, p_type = 2, c_off = -1, c_type = 4, t_off = -1, t_type = 1;
+    int pos_kind = 0;                 /* 1 POSITION, 2 POSITIONT (usage 9) */
     uint32_t ep = (d && mem_is_committed(d+8)) ? MR32(d+4) : 0;
     if (ep){
         for (int k = 0; k < 32 && nel < 16; k++){
@@ -1785,7 +1786,8 @@ static int draw_up(uint32_t pt, uint32_t nv, uint32_t vp, uint32_t stride){
                     }
                 }
               } }
-            if (us == 0 && ui == 0){ p_off = (int)of; p_type = (int)ty; }
+            if (us == 0 && ui == 0){ p_off = (int)of; p_type = (int)ty; pos_kind = 1; }
+            else if (us == 9 && ui == 0){ p_off = (int)of; p_type = (int)ty; pos_kind = 2; }
             else if (us == 10 && ui == 0){ c_off = (int)of; c_type = (int)ty; }
             else if (us == 5 && ui == 0){ t_off = (int)of; t_type = (int)ty; }
             if (prog){
@@ -1799,7 +1801,7 @@ static int draw_up(uint32_t pt, uint32_t nv, uint32_t vp, uint32_t stride){
     if (p_off < 0){ p_off = 0;  p_type = 2; }
     if (c_off < 0){ c_off = 12; c_type = 4; }
     if (t_off < 0){ t_off = 16; t_type = 1; }
-    dcc[dci].decl = d; dcc[dci].prog = prog; dcc[dci].nel = nel;
+    dcc[dci].decl = d; dcc[dci].prog = prog; dcc[dci].nel = nel; dcc[dci].pos_kind = pos_kind;
     dcc[dci].p_off = p_off; dcc[dci].p_type = p_type; dcc[dci].c_off = c_off;
     dcc[dci].c_type = c_type; dcc[dci].t_off = t_off; dcc[dci].t_type = t_type;
     memcpy(dcc[dci].el, el, sizeof el); dcc[dci].ok = 1;
@@ -1807,6 +1809,7 @@ static int draw_up(uint32_t pt, uint32_t nv, uint32_t vp, uint32_t stride){
     const DElem *el = dcc[dci].el; int nel = dcc[dci].nel;
     int p_off = dcc[dci].p_off, p_type = dcc[dci].p_type, c_off = dcc[dci].c_off,
         c_type = dcc[dci].c_type, t_off = dcc[dci].t_off, t_type = dcc[dci].t_type;
+    int pos_kind = dcc[dci].pos_kind;
 
     /* ---------------- GPU vertex shader (GPUVS) ----------------
      * Measured: ~45% of the run time was in the CPU vs_run interpreter,
@@ -1926,6 +1929,11 @@ static int draw_up(uint32_t pt, uint32_t nv, uint32_t vp, uint32_t stride){
             decl_fetch(o + (unsigned)t_off, (unsigned)t_type, uv);
             out->x=pos[0]; out->y=pos[1]; out->z=pos[2];
             out->w=(p_type==3)?pos[3]:1.f;
+            /* fixed function with a vertex declaration (no shader): POSITION
+             * goes through World x View x Projection and the viewport,
+             * POSITIONT is in pixels (CMR5's pace-note arrow mesh was drawn
+             * untransformed: huge, cut to its box) */
+            if (d && !prog && pos_kind){ void ffp_decl_pos(const float *, int, TVert *); ffp_decl_pos(pos, pos_kind == 2, out); }
             out->r=col[0]; out->g=col[1]; out->b=col[2]; out->a=col[3];
             out->r1=0.f; out->g1=0.f; out->b1=0.f; out->a1=0.f;
             for (int ts = 0; ts < 4; ts++){
@@ -1950,8 +1958,8 @@ static int draw_up(uint32_t pt, uint32_t nv, uint32_t vp, uint32_t stride){
                   seen[ns++] = key; bn++;
                   { unsigned tw = 0, th = 0; void metal_tex_size(unsigned, unsigned *, unsigned *); if (g_cur_tex) metal_tex_size(g_cur_tex, &tw, &th);
                     static long bdn = -2; static int bdone; if (bdn == -2){ const char *e = ENVC("BOXDUMP"); bdn = e ? atol(e) : -1; }
-                    static uint32_t dumped[6]; int dd = 0; for (int q = 0; q < bdone; q++) if (dumped[q] == g_cur_tex) dd = 1;
-                    if (bdn >= 0 && !dd && bdone < 6 && tw == 256u && th == 256u){ dumped[bdone++] = g_cur_tex;
+                    static uint32_t dumped[16]; int dd = 0; for (int q = 0; q < bdone; q++) if (dumped[q] == g_cur_tex) dd = 1;
+                    if (bdn >= 0 && !dd && bdone < 16 && tw == 256u && th == 256u){ dumped[bdone++] = g_cur_tex;
                         if (g_cur_tex < 16384u && rtd[g_cur_tex]){
                             static uint8_t px[256*256*4]; int metal_read_texture(unsigned, void *, unsigned, unsigned);
                             uint32_t tmp = gbuf_alloc(256u*256u*4u);
