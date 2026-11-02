@@ -61,6 +61,15 @@ def main(path, outdir, genout=None, prefix=''):
     # lifter's JTSWITCH does not take): its entries as slots, so the targets
     # are lifted as entries the dispatcher finds; it stops at the first dword
     # that is not a code address (the table's end)
+    # ... and the same pattern found in the raw bytes at every offset (FF 24 <SIB scale 4, no base> disp32):
+    # a linear sweep that ran out of step on data inside a function (the CRT's memmove keeps its tables
+    # right after its code) misses the jmp itself
+    for va, data in code:
+        i = data.find(bytes((0xFF, 0x24)))
+        while i >= 0 and i + 7 <= len(data):
+            if (data[i + 2] & 0xC7) == 0x85:
+                tables.add(struct.unpack_from('<I', data, i + 3)[0])
+            i = data.find(bytes((0xFF, 0x24)), i + 1)
     for t in tables:
         for va, data in code:
             if not va <= t < va + len(data): continue
@@ -68,7 +77,9 @@ def main(path, outdir, genout=None, prefix=''):
                 o = t - va + 4 * k
                 if o + 4 > len(data): break
                 v = struct.unpack_from('<I', data, o)[0]
-                if not any(cv <= v < cv + len(cd) for cv, cd in code): break
+                if not any(cv <= v < cv + len(cd) for cv, cd in code):
+                    if k == 0: continue          # entry 0 unused (memmove: it overlaps the jmp's own bytes)
+                    break
                 slots.add(t + 4 * k)
     seeds = {ib + pe.OPTIONAL_HEADER.AddressOfEntryPoint}
     if hasattr(pe, 'DIRECTORY_ENTRY_EXPORT'):

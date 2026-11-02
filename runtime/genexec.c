@@ -88,6 +88,7 @@ int run_generated(CPU *c, uint32_t entry){
         case 0x58: case 0x59: case 0x5A: case 0x5B:
         case 0x5C: case 0x5D: case 0x5E: case 0x5F:
             POP32(c->r[op-0x58]); pc++; continue;
+        case 0xC9: c->esp = c->ebp; POP32(c->ebp); pc++; continue;          /* leave */
         case 0x68: PUSH32(MR32(pc+1)); pc += 5; continue;                    /* push imm32 */
         case 0x6A: PUSH32((uint32_t)(int32_t)(int8_t)MR8(pc+1)); pc += 2; continue;
         case 0x9C: PUSH32(0x202u | (c->cf) | (c->pf<<2) | (c->zf<<6)
