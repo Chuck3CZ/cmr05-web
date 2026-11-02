@@ -171,12 +171,17 @@ static const Iface g_if[] = {
     {"IDirect3DVertexBuffer8",   M_VBUF8,      NEL(M_VBUF8)},
     {"IDirect3DIndexBuffer8",    M_IBUF8,      NEL(M_IBUF8)},
     {"IDirect3DSurface8",        M_SURFACE8,   NEL(M_SURFACE8)},
+    /* DirectSound buffer interfaces (CMR5) */
+    {"IDirectSoundNotify",       M_DSNOTIFY,   NEL(M_DSNOTIFY)},
+    {"IDirectSound3DBuffer",     M_DS3DBUF,    NEL(M_DS3DBUF)},
+    {"IDirectSound3DListener",   M_DS3DLIS,    NEL(M_DS3DLIS)},
 };
 /* keep in step with runtime/d3d8.c */
 enum { IF_D3D9=1, IF_DEV, IF_TEX, IF_VB, IF_IB, IF_SURF, IF_SIMPLE,
        IF_VSHADER, IF_VDECL, IF_STATEBLOCK, IF_SWAPCHAIN, IF_QUERY,
        IF_DI8, IF_DIDEV, IF_DS, IF_DSBUF, IF_DIEFF,
-       IF_D3D8, IF_DEV8, IF_TEX8, IF_CUBE8, IF_VB8, IF_IB8, IF_SURF8 };
+       IF_D3D8, IF_DEV8, IF_TEX8, IF_CUBE8, IF_VB8, IF_IB8, IF_SURF8,
+       IF_DSNOTIFY, IF_DS3DBUF, IF_DS3DLIS };
 /* the D3D9 interface whose object a D3D8 vtable fronts */
 static const uint8_t g_base9[] = { [IF_D3D8] = IF_D3D9, [IF_DEV8] = IF_DEV, [IF_TEX8] = IF_TEX, [IF_CUBE8] = IF_TEX,
                                    [IF_VB8] = IF_VB, [IF_IB8] = IF_IB, [IF_SURF8] = IF_SURF };
@@ -241,7 +246,7 @@ uint32_t com_new_dieffect(void){ return com_new(IF_DIEFF, 16u); }
 #define PSCUBE 256   /* must MATCH metal.m: cube ps variant */
 uint64_t g_com_calls=0, g_com_unimpl=0;
 /* per-method call counter: the work list for the render layer */
-#define MSTAT_IF 20
+#define MSTAT_IF 32
 #define MSTAT_M  128
 static uint64_t g_mstat[MSTAT_IF][MSTAT_M];
 static uint64_t g_present=0, g_draw=0;
@@ -825,7 +830,7 @@ static int com_valid(uint32_t o){
     if (!(i > 0 && i < NEL(g_if))) return 0;
     uint32_t v = MR32(o);
     if (g_vtab[i] && v == g_vtab[i]) return 1;
-    for (uint32_t k = IF_D3D8; k < NEL(g_if); k++)          /* handed to D3D8 code: its D3D8 vtable */
+    for (uint32_t k = IF_D3D8; k <= IF_SURF8; k++)          /* handed to D3D8 code: its D3D8 vtable */
         if (g_base9[k] == i && g_vtab[k] && v == g_vtab[k]) return 1;
     return 0;
 }
@@ -2299,7 +2304,7 @@ static void fxtr_dev(CPU *c, int iface, int mid, int nargs, const char *nm){
 int d3d8_call(CPU *c, uint32_t iface, uint32_t m);   /* runtime/d3d8.c */
 int com_call(CPU *c, uint32_t magic){
     uint32_t iface=(magic>>16)&0x1FFFu, m=magic&0xFFFFu;
-    if (iface >= IF_D3D8 && iface < NEL(g_if)) return d3d8_call(c, iface, m);
+    if (iface >= IF_D3D8 && iface <= IF_SURF8) return d3d8_call(c, iface, m);
     g_com_calls++;
     g_com_cpu = c;
     if (!g_sb_replay) POP32(c->eip);
@@ -2387,7 +2392,19 @@ int com_call(CPU *c, uint32_t magic){
          * (measured: 4 buffers are created but none is written to).
          * We return the same object - the vtable slots are shared anyway. */
         uint32_t ppv = (nargs >= 3) ? A(c,2) : 0u;
-        if ((iface==IF_DS || iface==IF_DSBUF) && ppv){
+        /* the buffer's other interfaces (by the IID's first dword): objects
+         * of their own, as their methods differ; IKsPropertySet (EAX) is
+         * refused as a card without EAX does */
+        uint32_t iid0 = (nargs >= 2 && A(c,1) && mem_is_committed(A(c,1))) ? MR32(A(c,1)) : 0u;
+        uint32_t sub = iid0 == 0xB0210783u ? IF_DSNOTIFY : iid0 == 0x279AFA86u ? IF_DS3DBUF
+                     : iid0 == 0x279AFA84u ? IF_DS3DLIS : 0u;
+        if ((iface==IF_DS || iface==IF_DSBUF) && ppv && iid0 == 0x31EFAC30u){ mem_commit(ppv,4); MR32(ppv) = 0; r=0x80004002u; }
+        else if ((iface==IF_DS || iface==IF_DSBUF) && ppv && sub){
+            uint32_t o2 = com_new(sub, 64u);
+            if (o2) MR32(o2 + 4) = A(c,0);                /* the buffer it belongs to */
+            mem_commit(ppv,4); MR32(ppv) = o2; r = o2 ? 0u : 0x8007000Eu;
+        }
+        else if ((iface==IF_DS || iface==IF_DSBUF) && ppv){
             mem_commit(ppv,4); MR32(ppv) = A(c,0); r = 0;
             com_addref(A(c,0));                 /* v12na: a new interface is a reference */
         } else r=0x80004002u;
@@ -4258,6 +4275,18 @@ int com_call(CPU *c, uint32_t magic){
             }
             if(pp) MR32(pp)=b; r=0; }
         else r=0;
+    }
+    else if (iface==IF_DSNOTIFY || iface==IF_DS3DBUF || iface==IF_DS3DLIS){
+        /* positions, cones, distances: accepted and not used (no 3D mix yet);
+         * a Get* answers zeros (GetAllParameters keeps the struct's dwSize) */
+        if (!strncmp(nm, "Get", 3) && nargs >= 2){
+            uint32_t p = A(c,1);
+            if (p && mem_is_committed(p)){
+                if (!strcmp(nm, "GetAllParameters")){ uint32_t sz = MR32(p); if (sz >= 8u && sz <= 256u){ mem_commit(p, sz); memset(g_mem + p + 4, 0, sz - 4); } }
+                else { MR32(p) = 0; if (nargs >= 3 && A(c,2) && mem_is_committed(A(c,2))) MR32(A(c,2)) = 0; }
+            }
+        }
+        r = 0;
     }
     else if (iface==IF_DSBUF){
         uint32_t self=A(c,0);

@@ -137,4 +137,22 @@ static const Method M_DSBUF[] = {
  {"Lock",8},{"Play",4},{"SetCurrentPosition",2},{"SetFormat",2},
  {"SetVolume",2},{"SetPan",2},{"SetFrequency",2},{"Stop",1},{"Unlock",5},{"Restore",1},
 };
+/* CMR5 asks a sound buffer for these (QueryInterface) */
+static const Method M_DSNOTIFY[] = {
+ {"QueryInterface",3},{"AddRef",1},{"Release",1},{"SetNotificationPositions",3},
+};
+static const Method M_DS3DBUF[] = {
+ {"QueryInterface",3},{"AddRef",1},{"Release",1},
+ {"GetAllParameters",2},{"GetConeAngles",3},{"GetConeOrientation",2},{"GetConeOutsideVolume",2},
+ {"GetMaxDistance",2},{"GetMinDistance",2},{"GetMode",2},{"GetPosition",2},{"GetVelocity",2},
+ {"SetAllParameters",3},{"SetConeAngles",4},{"SetConeOrientation",5},{"SetConeOutsideVolume",3},
+ {"SetMaxDistance",3},{"SetMinDistance",3},{"SetMode",3},{"SetPosition",5},{"SetVelocity",5},
+};
+static const Method M_DS3DLIS[] = {
+ {"QueryInterface",3},{"AddRef",1},{"Release",1},
+ {"GetAllParameters",2},{"GetDistanceFactor",2},{"GetDopplerFactor",2},{"GetOrientation",3},
+ {"GetPosition",2},{"GetRolloffFactor",2},{"GetVelocity",2},
+ {"SetAllParameters",3},{"SetDistanceFactor",3},{"SetDopplerFactor",3},{"SetOrientation",8},
+ {"SetPosition",5},{"SetRolloffFactor",3},{"SetVelocity",5},{"CommitDeferredSettings",1},
+};
 #endif
