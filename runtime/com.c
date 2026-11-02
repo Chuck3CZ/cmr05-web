@@ -1905,6 +1905,28 @@ static int draw_up(uint32_t pt, uint32_t nv, uint32_t vp, uint32_t stride){
             }
         }
     }
+    /* BOXLOG=x0,y0,x1,y1: draws with a vertex in that box of the back buffer
+     * (pixels): positions, texture coordinates, texture, target */
+    { static int bl = -1, bn = 0; static float bx0, by0, bx1, by1;
+      if (bl < 0){ const char *e = ENVC("BOXLOG"); bl = e && sscanf(e, "%f,%f,%f,%f", &bx0, &by0, &bx1, &by1) == 4; }
+      if (bl && bn < 120 && nv && !g_cur_rt){
+          for (uint32_t k = 0; k < nv && k < 64; k++){
+              float w = tv[k].w ? tv[k].w : 1.f, sx = (tv[k].x / w * .5f + .5f) * g_bb_w, sy = (.5f - tv[k].y / w * .5f) * g_bb_h;
+              if (sx >= bx0 && sx <= bx1 && sy >= by0 && sy <= by1){ bn++;
+                  fprintf(stderr, "  [box] prog=%u fvf=0x%x nv=%u tex=%u tex1=%u:", g_cur_vs, g_cur_fvf, nv, g_cur_tex, 0u);
+                  for (uint32_t q = 0; q < nv && q < 6; q++){
+                      float w2 = tv[q].w ? tv[q].w : 1.f;
+                      fprintf(stderr, " (%.0f,%.0f uv %.3f,%.3f / %.3f,%.3f)", (tv[q].x / w2 * .5f + .5f) * g_bb_w, (.5f - tv[q].y / w2 * .5f) * g_bb_h,
+                              tv[q].t[0][0], tv[q].t[0][1], tv[q].t[1][0], tv[q].t[1][1]); }
+                  fprintf(stderr, "\n"); break; } } } }
+    /* VPLOG=1: draws under a viewport smaller than the target (CMR5 pace-note
+     * box): the path and the first vertices in clip space */
+    { static int vl = -1, vn = 0; if (vl < 0) vl = ENVC("VPLOG") ? 1 : 0;
+      int vr[4]; int ffp_viewport_rect(int *);
+      if (vl && vn < 80 && nv && (prog || (g_cur_fvf & 0xEu) != 4u) && ffp_viewport_rect(vr)){ vn++;
+          fprintf(stderr, "  [vp] rect %d,%d-%d,%d prog=%u fvf=0x%x decl=0x%x nv=%u v0=(%.3f %.3f %.3f %.3f) v1=(%.3f %.3f %.3f %.3f) tex=%u\n",
+                  vr[0], vr[1], vr[2], vr[3], g_cur_vs, g_cur_fvf, g_cur_decl, nv,
+                  tv[0].x, tv[0].y, tv[0].z, tv[0].w, tv[nv > 1 ? 1 : 0].x, tv[nv > 1 ? 1 : 0].y, tv[nv > 1 ? 1 : 0].z, tv[nv > 1 ? 1 : 0].w, g_cur_tex); } }
     if (prog && nel){
         g_vs_draws++;
         /* RAW position range of shader draws: shows which space the UI is
