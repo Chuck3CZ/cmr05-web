@@ -224,6 +224,16 @@ static void notify_pass_locked(SndBuf *s, uint32_t a, uint32_t b){
         if (a <= b ? (o >= a && o < b) : (o >= a || o < b)) sig_add(s->nev[k]);
     }
 }
+/* GetStatus: 0 stopped, 1 playing, 5 playing and looping (a one-shot sound
+ * ends in the mixer, not by a Stop) */
+uint32_t audio_status(int id){
+    uint32_t st = 0;
+    if (id <= 0 || id >= MAXSND) return 0;
+    pthread_mutex_lock(&g_slock);
+    if (g_snd[id].used && g_snd[id].playing) st = g_snd[id].loop ? 5u : 1u;
+    pthread_mutex_unlock(&g_slock);
+    return st;
+}
 void audio_play(int id, int loop){
     if (id <= 0 || id >= MAXSND) return;
     pthread_mutex_lock(&g_slock);

@@ -4286,7 +4286,7 @@ int com_call(CPU *c, uint32_t magic){
             for (; arr && k < (int)n && k < 16; k++){ off[k] = MR32(arr + 8u*k); ev[k] = MR32(arr + 8u*k + 4u); }
             void audio_set_notify(int, int, const uint32_t *, const uint32_t *);
             if (sid) audio_set_notify((int)sid, k, off, ev);
-            { static int said; if (said++ < 4) fprintf(stderr, "  [sound] notify: buffer 0x%08x (#%u), %u positions\n", buf, sid, n); }
+            { static int said; if (said++ < 12) fprintf(stderr, "  [sound] notify: buffer 0x%08x (#%u, %u bytes), %u positions, first at %u (event 0x%x)\n", buf, sid, buf ? MR32(buf+4) : 0u, n, k ? off[0] : 0u, k ? ev[0] : 0u); }
         }
         else if (!strncmp(nm, "Get", 3) && nargs >= 2){
             uint32_t p = A(c,1);
@@ -4479,7 +4479,13 @@ int com_call(CPU *c, uint32_t magic){
                                        audio_set_freq((int)MR32(self+28), A(c,1)); }
             r=0; }
         else if (MID(GetStatus)){
-            uint32_t p=A(c,1); if(p){mem_commit(p,4); MR32(p)= (self&&MR32(self+12))?1u:0u;} r=0; }
+            /* registered with the mixer: its state (CMR5 picks a free voice
+             * for every menu sound by GetStatus; one that had ended stayed
+             * "playing" here, so no voice was ever free again) */
+            uint32_t st = (self&&MR32(self+12))?1u:0u;
+            if (self && MR32(self+28)){ uint32_t audio_status(int); st = audio_status((int)MR32(self+28));
+                                        if (!st) MR32(self+12) = 0; }
+            uint32_t p=A(c,1); if(p){mem_commit(p,4); MR32(p)=st;} r=0; }
         else if (MID(GetCurrentPosition)){
             int break_gcp = 0;
             /* The play cursor advances by ELAPSED TIME (not a fake fixed
