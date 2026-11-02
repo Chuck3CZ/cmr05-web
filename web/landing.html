@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Warcraft III v prohlížeči</title>
+<title>Colin McRae Rally 2005</title>
 <style>
   :root { --bg: #0d0f14; --panel: #171b24; --text: #e8e6df; --muted: #9a9890; --accent: #d9a441; --line: #2a3040; }
   * { box-sizing: border-box; }
@@ -24,8 +24,8 @@
 </head>
 <body>
 <main>
-  <h1>Warcraft III: The Frozen Throne</h1>
-  <p>Verze 1.26a v prohlížeči. Hráči se vidí v síťové hře (LAN).</p>
+  <h1>Colin McRae Rally 2005</h1>
+  <p>České vydání v prohlížeči. Hráči se vidí v síťové hře (LAN).</p>
   <form id="f">
     <label for="name">Jméno hráče</label>
     <input id="name" maxlength="15" autocomplete="nickname" required pattern="[A-Za-z0-9_\-]{2,15}"
@@ -33,20 +33,20 @@
     <button id="go">Hrát</button>
   </form>
   <div class="note">Potřebuje Chrome (nebo Edge) s WebGPU. Profily a uložené hry zůstávají v tomto prohlížeči.
-    První spuštění stahuje asi 80 MB.</div>
+    Hra se stahuje průběžně (data mají 2,9 GB).</div>
 </main>
 <script>
   const name = document.getElementById('name');
-  try { name.value = localStorage.getItem('wc3-name') || ''; } catch {}
+  try { name.value = localStorage.getItem('cmr-name') || ''; } catch {}
   document.getElementById('f').addEventListener('submit', e => {
     e.preventDefault();
     const n = name.value.trim();
     if (!name.checkValidity()) return;
-    try { localStorage.setItem('wc3-name', n); } catch {}
+    try { localStorage.setItem('cmr-name', n); } catch {}
     const q = new URLSearchParams();
-    q.set('wasm', '/wc3.wasm'); q.set('pages', '20480'); q.set('arg', '/data/war3.exe');
+    q.set('wasm', '/wc3.wasm'); q.set('pages', '20480'); q.set('arg', '/data/CMR5.EXE');
     q.append('env', 'WC3_SAVEDIR=/save'); q.append('env', 'WC3_READONLY_DATA=1');
-    q.set('gpu', ''); q.set('net', n); q.set('save', 'p-' + n.toLowerCase());
+    q.set('gpu', ''); q.set('net', n); q.set('save', 'cmr-' + n.toLowerCase());
     location.href = '/test/hostcheck.html?' + q.toString();
   });
 </script>

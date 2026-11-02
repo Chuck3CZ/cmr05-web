@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 [ -f out/web/wc3.wasm ] || { echo "pack-qnap: out/web/wc3.wasm missing (./build.sh)"; exit 1; }
 ( cd web && node build.mjs >/dev/null )
-B=out/qnap/wc3-web-trial
+B=out/qnap/cmr05-web-trial
 rm -rf "$B" out/qnap/module; mkdir -p "$B/app/web/tools" out/qnap/module
 cp deploy/qnap/Dockerfile deploy/qnap/compose.yml deploy/qnap/README.md "$B/"
 [ -f deploy/qnap/.env ] && cp deploy/qnap/.env "$B/" || cp deploy/qnap/env.example "$B/.env"

@@ -1,4 +1,4 @@
-# WC3 in the browser on the QNAP (trial).  In .env next to this file:
+# CMR 2005 in the browser on the QNAP (trial).  In .env next to this file:
 #   WC3_GAME=/share/CACHEDEV1_DATA/wc3/game       the Warcraft III folder (war3.exe, game.dll, *.mpq, Maps, ...)
 #   WC3_MODULE=/share/CACHEDEV1_DATA/wc3/module   the folder with wc3.wasm
 #   WC3_LOGS=/share/CACHEDEV1_DATA/wc3/logs       the test pages' logs (browser.log, shot.png)
@@ -8,9 +8,9 @@
 services:
   server:
     build: .
-    image: wc3-web-trial
+    image: cmr05-web-trial
     restart: unless-stopped
-    ports: ["${WC3_PORT:-8086}:8086"]
+    ports: ["${WC3_PORT:-8087}:8086"]
     volumes:
       - ${WC3_GAME:?set WC3_GAME in .env}:/game:ro
       - ${WC3_MODULE:?set WC3_MODULE in .env}:/module:ro
