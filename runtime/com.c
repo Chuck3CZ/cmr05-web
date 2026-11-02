@@ -2784,6 +2784,28 @@ int com_call(CPU *c, uint32_t magic){
                 }
             }
 #undef DIP_SKIP
+            /* (this, PrimitiveType, StartVertex, PrimitiveCount): from stream 0's
+             * vertex buffer.  NFSU2 never called it; CMR5 draws its stage
+             * progress bar, its markers and the pace-note arrow so. */
+            else if (!strcmp(nm, "DrawPrimitive")){
+                uint32_t pt = A(c,1), start = A(c,2), nprim = A(c,3);
+                if (metal_available() && g_ss_vb && g_ss_stride && nprim && pt >= 2u && pt <= 6u){
+                    uint32_t vb = MR32(g_ss_vb+8);
+                    uint32_t nv = prim_verts(pt, nprim);
+                    if (vb){
+                        uint32_t src = vb + g_ss_off + start * g_ss_stride;
+                        /* lists in pieces under draw_up's 4096 vertices; strips and fans whole */
+                        uint32_t per = pt == 4u ? 4095u : pt == 2u ? 4094u : 4095u;
+                        while (nv >= 2u){
+                            uint32_t n = nv > per ? per : nv;
+                            if (n < nv && pt != 4u && pt != 2u) break;
+                            if (!mem_is_committed(src) || !mem_is_committed(src + n * g_ss_stride - 1u)) break;
+                            draw_up(pt, n, src, g_ss_stride);
+                            src += n * g_ss_stride; nv -= n;
+                        }
+                    }
+                }
+                r = 0; }
             else if (MID(DrawPrimitiveUP)){
                 /* (this, PrimitiveType, PrimitiveCount, pVertexData, VertexStride) */
                 static uint64_t ptype[8], stride_hist[64];
