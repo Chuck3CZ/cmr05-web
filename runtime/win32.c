@@ -737,6 +737,18 @@ int win32_call(CPU *c, uint32_t idx){
     else if (!strcmp(n,"DirectInput8Create")) r = com_directinput8create(ARG(c,3));
     else if (!strcmp(n,"DirectSoundCreate") || (!strcmp(n,"#1") && !strcasecmp(e->dll,"DSOUND.dll")))
         r = com_directsoundcreate(ARG(c,1));
+    /* (callback, context): one device, the primary driver (lpGuid NULL), as
+     * Windows lists it first.  CMR5 makes no sound without a device here. */
+    else if (!strcmp(n,"DirectSoundEnumerateA")){
+        static uint32_t desc = 0, mod = 0;
+        if (!desc){ desc = gheap_alloc(1, 32, 1); strcpy((char *)(g_mem + desc), "Primary Sound Driver");
+                    mod = gheap_alloc(1, 4, 1); }
+        uint32_t cb = ARG(c,0), ctx = ARG(c,1);
+        if (cb){ const uint32_t args[4] = { 0u, desc, mod, ctx };
+            uint32_t call_guest(CPU *c, uint32_t fn, int nargs, const uint32_t *args);
+            uint32_t more = call_guest(c, cb, 4, args);
+            fprintf(stderr, "[dsound] DirectSoundEnumerateA: the primary driver listed (callback 0x%08x -> %u)\n", cb, more); }
+        r = 0; }
     else if (!strcmp(n,"SetConsoleCtrlHandler")) r = 1;
     else if (!strcmp(n,"RtlUnwind"))             r = 0;
     else if (!strcmp(n,"RaiseException") && ARG(c,0) == 0x406D1388u){

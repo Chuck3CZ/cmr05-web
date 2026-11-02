@@ -336,7 +336,11 @@ static void label_put(int row, const char *txt){
 }
 static int g_cur_row = -1;             /* the game's active row (-1 = unknown) */
 static int g_row4_on = 1;              /* is the 4K row selectable (see modes_refresh) */
-static int modemap_on(void){ return !ENVC("NOWIDE"); }
+/* NFSU2 drew its HUD through hooks that knew its menu rows; CMR5 has none, so
+ * a device larger than the size the game asked for left the HUD (pretransformed
+ * vertices in the game's pixels) in a corner.  CMR: the device is what the game
+ * asks for unless WIDE=1. */
+static int modemap_on(void){ const char *w = ENVC("WIDE"); return w && w[0] == '1' && !ENVC("NOWIDE"); }
 /* The rows are derived from the VIEW's (window / full screen) aspect:
  * "1080p" = 1080 lines at the view's aspect.  So the drawable fills the
  * window without bars, and the resolution only changes the quality.  The
@@ -1370,8 +1374,8 @@ static void res_pick(uint32_t gw, uint32_t gh, uint32_t *dw, uint32_t *dh){
     }
     else if (!pinned){
         uint32_t bw = aw ? aw : gw, bh = ah ? ah : gh;
-        const char *nv = ENVC("NFSNATIVE");
-        if (bw && bh && !(nv && nv[0] == '0')){
+        const char *nv = ENVC("NFSNATIVE");            /* CMR: off unless NFSNATIVE=1 (see modemap_on) */
+        if (bw && bh && nv && nv[0] == '1'){
             void metal_native_size(unsigned,unsigned,unsigned*,unsigned*);
             unsigned nw = bw, nh = bh;
             metal_native_size(bw, bh, &nw, &nh);
