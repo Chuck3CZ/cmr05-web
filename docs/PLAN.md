@@ -41,7 +41,8 @@ savy v `SG/`. Nic z toho nesmí do gitu (`.gitignore`).
 | 1 – kostra repa z wc3-web, lifter, `gen.sh` | **hotovo** – exe: 7 822 funkcí, 64 shardů, 395 trapů (většinou data dekódovaná jako kód: `aam`, `iretd`) |
 | 2 – build + link (`./build.sh`) | **hotovo** – `out/web/wc3.wasm` 23 MB |
 | 3 – start pod Node / v Chrome, chybějící Win32 importy | **rozpracováno** – pod Node: okno `PC_CMR5`, D3D9 zařízení, DirectInput, MathPIII.dll, textury, první `DrawIndexedPrimitive`/`EndScene`; pak volání přes NULL (viz níže) |
-| 4 – D3D9 (z nfsu2 části runtime), menu | – |
+| 4 – D3D9 (z nfsu2 části runtime), menu | **hotovo** – menu, závody, HUD, zvuk (hudba, motor, spolujezdec), klávesnice |
+| 4b – známé chyby | šipka rozpisu v rámečku zvětšená/špatně, mapa při startu hry; viz níže |
 | 5 – závod, výkon, DInput8 (klávesnice/gamepad/volant), zvuk | – |
 | 6 – videa (WMV → WebM) | – |
 | 7 – nasazení na QNAP (jako wc3-web, jiný port) | – |
@@ -64,6 +65,26 @@ Opraveno cestou:
 (objekt z `sub_004647f0(0)`, volající `sub_00466c30`). Větev závisí na `[0xb674c0]` = render-to-texture z caps
 (`sub_00588850` @0x588e90: DevCaps2 & 0x10 a DeclTypes 0x200 / 0x2020000). Zjistit, co textura měla obsahovat
 (CreateTexture s RENDERTARGET? D3DX?). Pak testovací stránka (`hostcheck`) v Chrome, vlákna, zvuk.
+
+### Krok 4 – stav (2026-11-02)
+
+Hra běží v Chrome (`hostcheck` na portu 8087) od úvodního dema přes menu po závod se zvukem. Opraveno:
+TextureCaps bez SQUAREONLY, proměnné prostředí (Intel OpenMP), velikost zásobníku `CreateThread`, 4 CPU,
+DirectInput klávesnice (`runtime/dinput_kbd.c`), zařízení v rozlišení, které hra chce (HUD), `DirectSoundEnumerateA`
+se zařízením s GUID, `IDirectSoundNotify`/`3DBuffer`/`3DListener` (IKsPropertySet odmítnut), notifikace z mixéru,
+`GetStatus` z mixéru, `MsgWaitForMultipleObjects`, `CompareString`, 1024 zvukových slotů, viewport u shaderů,
+`SetRenderTarget` resetuje viewport i scissor, scissor test, **`DrawPrimitive`** (chyběl úplně: trasa, body,
+stínový jezdec), fixed function s vertex declaration (POSITION přes WVP).
+
+**Otevřené:** šipka spolujezdce v rámečku je pořád zvětšená (rámeček z atlasu HUD je správně, šipka je 3D model –
+kreslení ještě neodchyceno; ladicí přepínače `BOXLOG=x0,y0,x1,y1`, `BOXDUMP=0`, `RTDRAWLOG=1`, `VPLOG=1`, `TEXID=`,
+`TEXDUMP=1`; dekodér `[texdump]` → PNG byl ve scratchpadu), mapa při startu hry. Videa WMV (`NOVIDEO`).
+
+### Nasazení na QNAP (2026-11-02)
+
+`\QNAP-TVs\Public\Colin`: `game/` (data), `module/wc3.wasm`, `logs/`, `cmr05-web-trial.tar` (image z Docker
+Desktop), `container-station.yml` (port 8087). Postup jako u wc3-web: `tools/pack-qnap.sh`, `docker build` ve Windows
+(kontext zkopírovat z WSL), `docker save` na share, Container Station: Images → Import, Applications → Create.
 
 ## Příkazy
 
