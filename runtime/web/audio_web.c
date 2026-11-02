@@ -148,6 +148,10 @@ typedef struct {
     unsigned settled;         /* slices mixed since it played from the top (to SETTLE_SLICES) */
     int      starving;        /* the last slice was mixed before the game wrote it */
     double   wtime;           /* when the game last wrote it (mono_s) */
+    /* IDirectSoundNotify (CMR5 streams by it): offsets and the events the
+     * mixer signals when the play cursor passes them; 0xFFFFFFFF = on stop */
+    int      nnot;
+    uint32_t noff[16], nev[16];
 } SndBuf;
 
 static SndBuf g_snd[MAXSND];
@@ -195,6 +199,30 @@ int audio_register(uint32_t data, uint32_t bytes, uint32_t rate,
     }
     pthread_mutex_unlock(&g_slock);
     return id;
+}
+void win32_signal_event(uint32_t h);
+void audio_set_notify(int id, int n, const uint32_t *off, const uint32_t *ev){
+    if (id <= 0 || id >= MAXSND) return;
+    if (n > 16) n = 16; if (n < 0) n = 0;
+    pthread_mutex_lock(&g_slock);
+    g_snd[id].nnot = n;
+    for (int k = 0; k < n; k++){ g_snd[id].noff[k] = off[k]; g_snd[id].nev[k] = ev[k]; }
+    pthread_mutex_unlock(&g_slock);
+}
+/* events to signal once g_slock is released (mix_into, audio_stop) */
+static uint32_t g_sig[256]; static int g_nsig;
+static void sig_add(uint32_t ev){ if (ev && g_nsig < 256) g_sig[g_nsig++] = ev; }
+static void sig_flush(void){ for (int k = 0; k < g_nsig; k++) win32_signal_event(g_sig[k]); g_nsig = 0; }
+static void notify_stop_locked(SndBuf *b){
+    for (int k = 0; k < b->nnot; k++) if (b->noff[k] == 0xFFFFFFFFu) sig_add(b->nev[k]);
+}
+/* the cursor went from byte a to byte b (a > b: it wrapped) */
+static void notify_pass_locked(SndBuf *s, uint32_t a, uint32_t b){
+    for (int k = 0; k < s->nnot; k++){
+        uint32_t o = s->noff[k];
+        if (o == 0xFFFFFFFFu) continue;
+        if (a <= b ? (o >= a && o < b) : (o >= a || o < b)) sig_add(s->nev[k]);
+    }
 }
 void audio_play(int id, int loop){
     if (id <= 0 || id >= MAXSND) return;
@@ -261,7 +289,7 @@ void audio_unregister(int id){
     if (id <= 0 || id >= MAXSND) return;
     pthread_mutex_lock(&g_slock);
     if (g_snd[id].used){
-        g_snd[id].used = 0; g_snd[id].playing = 0; g_snd[id].data = 0;
+        g_snd[id].used = 0; g_snd[id].playing = 0; g_snd[id].data = 0; g_snd[id].nnot = 0;
         if (g_nsndfree < MAXSND) g_sndfree[g_nsndfree++] = id;
     }
     pthread_mutex_unlock(&g_slock);
@@ -269,8 +297,10 @@ void audio_unregister(int id){
 void audio_stop(int id){
     if (id <= 0 || id >= MAXSND) return;
     pthread_mutex_lock(&g_slock);
-    if (g_snd[id].used){ g_snd[id].playing = 0; g_snd[id].stops++; }
+    if (g_snd[id].used){ if (g_snd[id].playing) notify_stop_locked(&g_snd[id]); g_snd[id].playing = 0; g_snd[id].stops++; }
+    uint32_t sg[16]; int ns = 0; for (int k = 0; k < g_nsig && ns < 16; k++) sg[ns++] = g_sig[k]; g_nsig = 0;
     pthread_mutex_unlock(&g_slock);
+    for (int k = 0; k < ns; k++) win32_signal_event(sg[k]);
 }
 /* GetCurrentPosition: the play cursor and a write cursor 50 ms ahead of it
  * (equal cursors made the game write where we play).  The game's writer adds
@@ -437,13 +467,20 @@ static void mix_into(float *out, unsigned frames){
                 if (!g_mem[b->data + ((p0 + q) % b->bytes)]) z++;
             fprintf(g_csv, "%.4f\n", nby ? (double)z/(double)nby : 0.0);
         }
+        uint32_t nb_bpf = b->chans * bps, nb_a = (uint32_t)(b->cursor * (double)nb_bpf) % b->bytes;
         b->cursor += step * (double)frames;
         if (b->cursor >= (double)nsrc){
             if (b->loop) b->cursor = fmod(b->cursor, (double)nsrc);
             else { b->cursor = 0.0; b->playing = 0; }
         }
+        if (b->nnot){
+            if (!b->playing){ notify_pass_locked(b, nb_a, b->bytes); notify_stop_locked(b); }
+            else notify_pass_locked(b, nb_a, (uint32_t)(b->cursor * (double)nb_bpf) % b->bytes);
+        }
     }
+    uint32_t sg[256]; int ns = g_nsig; for (int k = 0; k < ns; k++) sg[k] = g_sig[k]; g_nsig = 0;
     pthread_mutex_unlock(&g_slock);
+    for (int k = 0; k < ns; k++) win32_signal_event(sg[k]);
     if (active > g_active_peak) g_active_peak = active;
     g_mixed_frames += frames;
     if (g_sndstat){

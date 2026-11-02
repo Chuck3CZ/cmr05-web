@@ -4279,7 +4279,16 @@ int com_call(CPU *c, uint32_t magic){
     else if (iface==IF_DSNOTIFY || iface==IF_DS3DBUF || iface==IF_DS3DLIS){
         /* positions, cones, distances: accepted and not used (no 3D mix yet);
          * a Get* answers zeros (GetAllParameters keeps the struct's dwSize) */
-        if (!strncmp(nm, "Get", 3) && nargs >= 2){
+        if (iface==IF_DSNOTIFY && !strcmp(nm, "SetNotificationPositions")){   /* (n, DSBPOSITIONNOTIFY[]) */
+            uint32_t self7 = A(c,0), buf = self7 ? MR32(self7 + 4) : 0, n = A(c,1), arr = A(c,2);
+            uint32_t sid = (buf && mem_is_committed(buf + 31)) ? MR32(buf + 28) : 0;
+            uint32_t off[16], ev[16]; int k = 0;
+            for (; arr && k < (int)n && k < 16; k++){ off[k] = MR32(arr + 8u*k); ev[k] = MR32(arr + 8u*k + 4u); }
+            void audio_set_notify(int, int, const uint32_t *, const uint32_t *);
+            if (sid) audio_set_notify((int)sid, k, off, ev);
+            { static int said; if (said++ < 4) fprintf(stderr, "  [sound] notify: buffer 0x%08x (#%u), %u positions\n", buf, sid, n); }
+        }
+        else if (!strncmp(nm, "Get", 3) && nargs >= 2){
             uint32_t p = A(c,1);
             if (p && mem_is_committed(p)){
                 if (!strcmp(nm, "GetAllParameters")){ uint32_t sz = MR32(p); if (sz >= 8u && sz <= 256u){ mem_commit(p, sz); memset(g_mem + p + 4, 0, sz - 4); } }
