@@ -4,6 +4,7 @@ import { startProcess } from '../host/process';
 import { attachNet } from '../net/index';
 import { attachRenderer } from '../gpu/index';
 import { attachInput } from '../input/index';
+import { attachTouchKeys, touchWanted } from '../app/touchkeys';
 import { attachAudio } from '../audio/index';
 const q = new URLSearchParams(location.search);
 const gpu = q.has('gpu');
@@ -13,8 +14,17 @@ const resQ = /^(\d{3,4})x(\d{3,4})$/.exec(q.get('res') ?? '');
 const resW = (resQ ? +resQ[1] : Math.max(1280, screen.width)) & ~1, resH = (resQ ? +resQ[2] : Math.max(720, screen.height)) & ~1;
 const canvas = document.createElement('canvas');
 const fs = document.createElement('button');
+// the canvas in a box of its own: the touch controls lie over it, and in touch mode the box goes full screen
+const wrap = document.createElement('div');
+const touch = gpu && touchWanted(q);
 if (gpu) { canvas.width = resW; canvas.height = resH; canvas.style.cssText = 'display:block;width:1280px;max-width:100%;background:#000';
-           document.body.append(canvas);
+           wrap.style.cssText = 'position:relative;width:max-content;max-width:100%';
+           wrap.append(canvas); document.body.append(wrap);
+           // full screen in touch mode: the box (buttons included), the picture fitted, landscape on a phone
+           const st = document.createElement('style');
+           st.textContent = '.wc3wrap:fullscreen{width:100vw!important;max-width:none!important;background:#000;display:flex;align-items:center;justify-content:center}' +
+             '.wc3wrap:fullscreen canvas{width:auto!important;height:100vh!important;max-width:100vw!important;object-fit:contain}';
+           document.head.append(st); wrap.className = 'wc3wrap';
            fs.textContent = 'Celá obrazovka'; fs.style.cssText = 'margin:6px 0;font-size:14px';
            fs.onclick = () => { canvas.requestFullscreen({ navigationUI: 'hide' }).then(() => canvas.focus(), e => console.log('fullscreen: ' + e)); };
            const hint = document.createElement('span'); hint.style.cssText = 'margin-left:10px;font:13px system-ui,sans-serif;color:#666';
@@ -82,6 +92,14 @@ if (gpu) {
       return { x: ir.x * k, y: ir.y * k, w: ir.w * k, h: ir.h * k }; } });
     (globalThis as any).wc3Input = inp;
     fs.onclick = () => { void inp.enterFullscreen().then(() => canvas.focus()); };
+    // ?touch (or a phone / tablet): on-screen buttons that press the game's keys; full screen takes them along
+    if (touch) {
+      attachTouchKeys(wrap, inp);
+      fs.onclick = () => { wrap.requestFullscreen({ navigationUI: 'hide' }).then(() => {
+        const o: any = (screen as any).orientation; if (o && o.lock) o.lock('landscape').catch(() => {}); canvas.focus(); },
+        e => log('fullscreen: ' + e)); };
+      log('[page] touch controls on (?notouch hides them)');
+    }
     // sound: the context starts on the first click or key (the browser's rule)
     attachAudio(p, { log, gestureTarget: window }).then(a => { (globalThis as any).wc3Audio = a; log('[page] audio attached'); },
                                                        e => log('[page] no audio: ' + e));
