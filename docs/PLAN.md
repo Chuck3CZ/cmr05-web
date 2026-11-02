@@ -1,0 +1,62 @@
+# Colin McRae Rally 2005 (CZ) v prohlížeči – plán a stav
+
+> **Na začátku každého sezení si přečti tento soubor.** Na konci každého kroku ho aktualizuj, commitni a pushni.
+
+Stejná metoda jako [wc3-web](https://github.com/Chuck3CZ/wc3-web) a nfsu2-web: statická rekompilace x86 → C → wasm,
+HLE Win32 / Direct3D 9 / DirectInput 8 / DirectSound, vykreslování přes WebGPU. Repo vzniklo jako kopie wc3-web
+(rev 311420a) – runtime, lifter i webová část jsou odtud; `docs/ORIGIN.md` popisuje původ z nfsu2-web.
+
+## Vstupní soubory (CZ vydání, 2004)
+
+| soubor | báze | SHA-256 |
+|---|---|---|
+| `CMR5.EXE` (7,9 MB, bez .reloc) | 0x00400000 | `749090010147b9c4fb1d88c75ee362691f0a4241ff3b52c12f7f90dd1d57f8f0` |
+| `MathCPU.dll` | 0x00BA0000 | `b913baecb125d4458f3183e2593c8390531de54eaf36cce125df46281bd951d6` |
+| `MathPIII.dll` | 0x00BB0000 | `6b0a646f1cb556b1f2a5624574c1ed572635be4609244ed0e81d12dcecd7d1de` |
+| `Math3dNow.dll` | 0x00BC0000 | `ce41ccda8b820401c55e3906756d939e521859265cb79367b8c6c7d89c832faf` |
+
+Data (2,9 GB): `data/` (Cars, Tracks, Textures, Sounds, `Rally_Shaders/shaders.big`, videa `*.wmv`), `fonts/`,
+savy v `SG/`. Nic z toho nesmí do gitu (`.gitignore`).
+
+## Průzkum (2026-11-02)
+
+- Importy exe: `d3d9` (Direct3DCreate9), `DINPUT8` (DirectInput8Create), `DSOUND` (ordinály 1, 2), `WSOCK32`,
+  kernel32 (105), user32 (27), gdi32, advapi32, ole32, version. Dynamicky: `Math*.dll` (13 exportů `MathDLL_*`),
+  `NETAPI32`, `SHELL32`, `d3d9d.dll`, `libittnotify.dll`, `mscoree.dll`.
+- `.text` nešifrovaný (entropie 6,7), žádný StarForce/SecuROM wrapper.
+- Sekce `.chntex` (0x00B76000, 0x23C bajtů) + `.chndat` + `.chnrel`: patch českého vydání (převodní tabulky znaků),
+  7 skoků/volání z `.text` do ní. Lifter (`tools/lift.py` `code_ranges`) proto bere i spustitelné sekce za mezerou.
+- Videa jsou WMV (DirectShow) → zatím `NOVIDEO` na příkazové řádce; později offline převod do WebM.
+
+## Rozložení paměti
+
+- `CMR5.EXE` 0x00400000–0x00B9A000 (.data 5,5 MB, .chnrel), math DLL 0x00BA0000–0x00BD0000.
+- TEB/PEB 0x00C00000, zásobníky, halda 0x08000000 – beze změny z wc3-web.
+- Dispatch (`runtime/cpu.h`): tabulka HI = 0x00401000–0x00BD0000 (celý kód), LO jen zástupná.
+
+## Stav
+
+| Fáze | Stav |
+|---|---|
+| 1 – kostra repa z wc3-web, lifter, `gen.sh` | **hotovo** – exe: 7 822 funkcí, 64 shardů, 395 trapů (většinou data dekódovaná jako kód: `aam`, `iretd`) |
+| 2 – build + link (`./build.sh`) | rozpracováno |
+| 3 – start pod Node / v Chrome, chybějící Win32 importy | – |
+| 4 – D3D9 (z nfsu2 části runtime), menu | – |
+| 5 – závod, výkon, DInput8 (klávesnice/gamepad/volant), zvuk | – |
+| 6 – videa (WMV → WebM) | – |
+| 7 – nasazení na QNAP (jako wc3-web, jiný port) | – |
+
+## Příkazy
+
+```sh
+. tools/env.sh
+./gen.sh /mnt/c/Users/Chuck/Desktop/colin     # lift -> gen/
+./build.sh                                     # -> out/web/wc3.wasm
+```
+
+## Zbytky WC3, které je třeba projít
+
+- `runtime/web/main_wc3.c`, `win32.c` (příkazová řádka `CMR5.EXE NOVIDEO`), `fileio.c` (`C:\Program Files\Codemasters\Colin McRae Rally 2005`).
+- `runtime/module.c` – `resolve_module` hledá i v `redist\miles` (neškodí).
+- `runtime/com.c` – NFSU2 ladicí háčky na pevných adresách (jen s env proměnnými), D3D8 vrstva (`d3d8.c`) CMR nepotřebuje.
+- `web/tools/wc3-dev-server.mjs`, testovací stránka – názvy a výchozí cesty.
