@@ -39,12 +39,31 @@ savy v `SG/`. Nic z toho nesmí do gitu (`.gitignore`).
 | Fáze | Stav |
 |---|---|
 | 1 – kostra repa z wc3-web, lifter, `gen.sh` | **hotovo** – exe: 7 822 funkcí, 64 shardů, 395 trapů (většinou data dekódovaná jako kód: `aam`, `iretd`) |
-| 2 – build + link (`./build.sh`) | rozpracováno |
-| 3 – start pod Node / v Chrome, chybějící Win32 importy | – |
+| 2 – build + link (`./build.sh`) | **hotovo** – `out/web/wc3.wasm` 23 MB |
+| 3 – start pod Node / v Chrome, chybějící Win32 importy | **rozpracováno** – pod Node: okno `PC_CMR5`, D3D9 zařízení, DirectInput, MathPIII.dll, textury, první `DrawIndexedPrimitive`/`EndScene`; pak volání přes NULL (viz níže) |
 | 4 – D3D9 (z nfsu2 části runtime), menu | – |
 | 5 – závod, výkon, DInput8 (klávesnice/gamepad/volant), zvuk | – |
 | 6 – videa (WMV → WebM) | – |
 | 7 – nasazení na QNAP (jako wc3-web, jiný port) | – |
+
+### Krok 3 – stav (2026-11-02)
+
+`tools/run-node.sh /mnt/c/Users/Chuck/Desktop/colin [COMTRACE=1] [BT=1]` → `out/node-run.log`.
+
+Opraveno cestou:
+- CRT `_output` (`printf`): tabulka skoků `jmp [eax*4+0x5b4ec9]` za `cmp eax, ecx` – JTSWITCH ji nebere,
+  `ptrscan.py` teď přidá položky takových tabulek jako sloty → cíle jsou funkce.
+- `GetDeviceCaps` mazal 0x150 bajtů místo 304 (sizeof D3DCAPS9) → přepsal CMR uložené registry na zásobníku
+  (`ebp`, `esi`, `edi` = 0 po `sub_00588850`).
+- `MathPIII.dll` – hra kontroluje verzi 1.06 přes VERSION.dll → `GetFileVersionInfoSizeA/GetFileVersionInfoA/
+  VerQueryValueA` (resource RT_VERSION ze souboru).
+- Cesty: hra skládá `C:\Program Files\Codemasters\Colin McRae Rally 2005\...` → to je teď virtuální složka hry.
+- `DSOUND` ordinál 2 (`DirectSoundEnumerateA`) neměl počet argumentů → zásobník o 8 B mimo → /GS „Buffer overrun“.
+
+**Další:** po prvním `EndScene` `sub_00583800` volá `GetSurfaceLevel` (vtable+0x48) na textuře s NULL na +0x18
+(objekt z `sub_004647f0(0)`, volající `sub_00466c30`). Větev závisí na `[0xb674c0]` = render-to-texture z caps
+(`sub_00588850` @0x588e90: DevCaps2 & 0x10 a DeclTypes 0x200 / 0x2020000). Zjistit, co textura měla obsahovat
+(CreateTexture s RENDERTARGET? D3DX?). Pak testovací stránka (`hostcheck`) v Chrome, vlákna, zvuk.
 
 ## Příkazy
 
