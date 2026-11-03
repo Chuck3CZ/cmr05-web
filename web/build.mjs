@@ -29,9 +29,10 @@ const opts = {
 };
 for (const [k, v] of Object.entries(opts.entryPoints)) if (!fs.existsSync(v)) delete opts.entryPoints[k];
 // WC3: until the player's page exists (index.html and src/app's shell), only the host, its workers and the test
-// pages are built; nfsu2-web's main.ts and play page import app modules this port left out.
+// pages are built; nfsu2-web's main.ts and play page import app modules this port left out.  The predownload worker
+// (src/host/predownload-worker.ts) stands alone and is built too: the start page (landing.html) runs it.
 const HAVE_APP = fs.existsSync('index.html');
-if (!HAVE_APP) for (const k of ['main', 'sw', 'test/play', 'test/aicheck', 'host/predownload-worker']) delete opts.entryPoints[k];
+if (!HAVE_APP) for (const k of ['main', 'sw', 'test/play', 'test/aicheck']) delete opts.entryPoints[k];
 
 // test pages and source maps go to dist-dev (same relative path: /test/x.js, /main.js.map); the rest to dist
 const devOnly = rel => rel.startsWith('test/') || rel.endsWith('.map');

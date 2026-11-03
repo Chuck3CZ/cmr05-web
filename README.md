@@ -25,6 +25,7 @@ Built on [wc3-web](https://github.com/Chuck3CZ/wc3-web) (same lifter and runtime
 | Sound: music, engine, co-driver | works |
 | Keyboard, and touch controls for phones and tablets | works |
 | Start page: browser check, loading ring, controls | works (`web/landing.html`) |
+| Download the game data ahead (2.6 GB, without the videos), from the start page | works (`web/landing.html`, `src/host/predownload-worker.ts`) |
 | Co-driver arrow in its box drawn too big; map at the start of a stage | known bugs |
 | Videos (WMV), gamepad and wheel (DirectInput 8) | not yet |
 
@@ -51,7 +52,9 @@ node web/tools/wc3-dev-server.mjs --data "<CMR 2005 folder>"
 
 Open the server's address (port 8086 by default). The start page checks the browser (secure page, threads, WebGPU,
 storage), shows the module's version on the server, lets you pick a name, the picture's resolution and the touch
-controls, shows a loading ring while the module downloads, and lists the controls.
+controls, shows a loading ring while the module downloads, and lists the controls. It can also download the game's
+data (2.6 GB, without the videos the browser game does not play) ahead of play, so a stage never waits on the network:
+the download can be stopped and continued, and starting a game stops it.
 
 A QNAP / Docker Compose setup with a Cloudflare Tunnel is in [deploy/qnap/README.md](deploy/qnap/README.md) (in Czech).
 
@@ -81,6 +84,8 @@ Edge s WebGPU a stránku přes HTTPS (nebo `localhost`). K sestavení Linux nebo
 
 **Startovní stránka** (`web/landing.html`) před spuštěním zkontroluje prohlížeč, ukáže verzi modulu na serveru, nechá
 zvolit jméno, rozlišení a dotykové ovládání, při stahování modulu ukazuje načítací kroužek a obsahuje přehled ovládání.
+Umí také stáhnout data hry (2,6 GB, bez videí) předem, takže trať nečeká na síť. Stahování jde zastavit a později
+pokračovat, spuštění hry ho samo zastaví.
 Je to jediný soubor bez závislostí, protože server posílá COEP `require-corp`.
 
 > Projekt nijak nesouvisí s Codemasters a není jimi schválen. Repozitář neobsahuje žádný kód ani data hry.
