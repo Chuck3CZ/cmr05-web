@@ -196,6 +196,7 @@
         <label class="chk"><input type="checkbox" id="o-showlog"><span><span data-t="o_showlog"></span><small data-t="o_showlog_h"></small></span></label>
         <label class="chk"><input type="checkbox" id="o-logpost"><span><span data-t="o_logpost"></span><small data-t="o_logpost_h"></small></span></label>
         <label class="chk"><input type="checkbox" id="o-noload"><span><span data-t="o_noload"></span><small data-t="o_noload_h"></small></span></label>
+        <label class="chk"><input type="checkbox" id="o-bg"><span><span data-t="o_bg"></span><small data-t="o_bg_h"></small></span></label>
         <label class="chk"><input type="checkbox" id="o-nocache"><span><span data-t="o_nocache"></span><small data-t="o_nocache_h"></small></span></label>
         <div class="cinfo" id="cache-info" aria-live="polite"></div>
         <div class="cbox"><button type="button" class="chip" id="cache-clear" data-t="cc_btn"></button></div>
@@ -302,7 +303,7 @@ const UI = {
     res: 'Rozlišení obrazu', resauto: 'Podle obrazovky (doporučeno)', reshint: 'Nižší rozlišení je méně náročné na grafiku.',
     touch: 'Dotykové ovládání', touchauto: 'Automaticky', touchon: 'Zapnout', touchoff: 'Vypnout', touchhint: 'Tlačítka přes hru pro telefon a tablet. Automaticky se zapnou jen na dotykovém zařízení.',
     adv: 'Pokročilé a ladění', o_showlog: 'Zobrazit log pod hrou', o_showlog_h: 'Běžně je skrytý.', o_logpost: 'Zapisovat log na server', o_logpost_h: 'Pro hlášení chyb: log si pak přečte provozovatel serveru.',
-    o_noload: 'Bez načítacího překryvu', o_noload_h: 'Stránka hry se spustí jako dřív, bez kroků načítání.', o_nocache: 'Neukládat modul do paměti prohlížeče', o_nocache_h: 'Modul se vždy stáhne znovu.', skipped: 'přeskočeno', cc_btn: 'Smazat uložený modul', cc_none: 'Nic není uloženo.', cc_has: 'Uloženo v prohlížeči:', cc_done: 'Smazáno. Příští start stáhne modul znovu. Uložené hry a profily zůstaly.', cc_fail: 'Smazání se nepovedlo.', cc_mod: 'Modul hry v paměti', cc_site: 'Úložiště stránky v prohlížeči', cc_of: 'z', cc_in: 'z toho', cc_caches: 'cache', cc_files: 'uložené hry a profily', cc_other: 'ostatní', cc_pers: 'Trvalé úložiště', cc_yes: 'ano', cc_no: 'ne: při nedostatku místa může prohlížeč cache smazat', cc_ver: 'verze', pre_h: 'Hra v tomto prohlížeči', pre_have: 'Staženo', pre_left: 'zbývá', pre_go: 'Stáhnout hru předem', pre_cont: 'Pokračovat ve stahování', pre_stop: 'Zastavit',
+    o_noload: 'Bez načítacího překryvu', o_noload_h: 'Stránka hry se spustí jako dřív, bez kroků načítání.', o_nocache: 'Neukládat modul do paměti prohlížeče', o_nocache_h: 'Modul se vždy stáhne znovu.', skipped: 'přeskočeno', o_bg: 'Nechat hru běžet i na skryté kartě', o_bg_h: 'Zkušební: dlouhé načítání se nezastaví, když přepneš jinam. Prohlížeč ale skryté kartě ubírá výkon.', cc_btn: 'Smazat uložený modul', cc_none: 'Nic není uloženo.', cc_has: 'Uloženo v prohlížeči:', cc_done: 'Smazáno. Příští start stáhne modul znovu. Uložené hry a profily zůstaly.', cc_fail: 'Smazání se nepovedlo.', cc_mod: 'Modul hry v paměti', cc_site: 'Úložiště stránky v prohlížeči', cc_of: 'z', cc_in: 'z toho', cc_caches: 'cache', cc_files: 'uložené hry a profily', cc_other: 'ostatní', cc_pers: 'Trvalé úložiště', cc_yes: 'ano', cc_no: 'ne: při nedostatku místa může prohlížeč cache smazat', cc_ver: 'verze', pre_h: 'Hra v tomto prohlížeči', pre_have: 'Staženo', pre_left: 'zbývá', pre_go: 'Stáhnout hru předem', pre_cont: 'Pokračovat ve stahování', pre_stop: 'Zastavit',
     pre_done: 'Hotovo: celá hra je v tomto prohlížeči a nečeká na síť.', pre_err: 'Stahování se zastavilo:', pre_note: 'Zbývá stáhnout {n} (bez videí). Stahování jde přerušit a později pokračovat.',
     play: 'Hrát', force: 'Spustit i přesto', envh: 'Tvůj prohlížeč', ctlh: 'Ovládání', ctlbtn: 'Zobrazit ovládání', close: 'Zavřít',
     stath: 'Stav projektu', needh: 'Co potřebuješ', loading: 'Připravuji hru', cancel: 'Zrušit', back: 'Zpět',
@@ -326,7 +327,7 @@ const UI = {
     res: 'Picture resolution', resauto: 'Match the screen (recommended)', reshint: 'A lower resolution is easier on the graphics card.',
     touch: 'Touch controls', touchauto: 'Automatic', touchon: 'On', touchoff: 'Off', touchhint: 'Buttons over the game for phones and tablets. Automatic turns them on only on a touch device.',
     adv: 'Advanced and debugging', o_showlog: 'Show the log under the game', o_showlog_h: 'Hidden by default.', o_logpost: 'Write the log to the server', o_logpost_h: 'For bug reports: the server operator then reads the log.',
-    o_noload: 'No loading overlay', o_noload_h: 'The game page starts as it used to, without the loading steps.', o_nocache: 'Do not keep the module in the browser', o_nocache_h: 'The module is always downloaded again.', skipped: 'skipped', cc_btn: 'Clear the stored module', cc_none: 'Nothing is stored.', cc_has: 'Stored in the browser:', cc_done: 'Cleared. The next start downloads the module again. Saved games and profiles stay.', cc_fail: 'Clearing failed.', cc_mod: 'Game module stored', cc_site: 'This page\'s storage in the browser', cc_of: 'of', cc_in: 'of that', cc_caches: 'cache', cc_files: 'saved games and profiles', cc_other: 'other', cc_pers: 'Persistent storage', cc_yes: 'yes', cc_no: 'no: the browser may clear the cache when space runs short', cc_ver: 'version', pre_h: 'Game in this browser', pre_have: 'Downloaded', pre_left: 'left', pre_go: 'Download the game ahead', pre_cont: 'Continue downloading', pre_stop: 'Stop',
+    o_noload: 'No loading overlay', o_noload_h: 'The game page starts as it used to, without the loading steps.', o_nocache: 'Do not keep the module in the browser', o_nocache_h: 'The module is always downloaded again.', skipped: 'skipped', o_bg: 'Keep the game running in a hidden tab', o_bg_h: 'Experimental: a long load does not stop when you switch away. The browser still slows a hidden tab.', cc_btn: 'Clear the stored module', cc_none: 'Nothing is stored.', cc_has: 'Stored in the browser:', cc_done: 'Cleared. The next start downloads the module again. Saved games and profiles stay.', cc_fail: 'Clearing failed.', cc_mod: 'Game module stored', cc_site: 'This page\'s storage in the browser', cc_of: 'of', cc_in: 'of that', cc_caches: 'cache', cc_files: 'saved games and profiles', cc_other: 'other', cc_pers: 'Persistent storage', cc_yes: 'yes', cc_no: 'no: the browser may clear the cache when space runs short', cc_ver: 'version', pre_h: 'Game in this browser', pre_have: 'Downloaded', pre_left: 'left', pre_go: 'Download the game ahead', pre_cont: 'Continue downloading', pre_stop: 'Stop',
     pre_done: 'Done: the whole game is in this browser and never waits on the network.', pre_err: 'The download stopped:', pre_note: '{n} left to download (without the videos). It can be stopped and continued later.',
     play: 'Play', force: 'Start anyway', envh: 'Your browser', ctlh: 'Controls', ctlbtn: 'Show controls', close: 'Close',
     stath: 'Project status', needh: 'What you need', loading: 'Getting the game ready', cancel: 'Cancel', back: 'Back',
@@ -467,7 +468,7 @@ function mkSteps(keys) {
 }
 const mark = (li, s, note) => { li.className = s; li.lastChild.textContent = note || ''; };
 
-const OPTS = ['showlog', 'logpost', 'noload', 'nocache'];
+const OPTS = ['showlog', 'logpost', 'noload', 'bg', 'nocache'];
 const optsGet = () => Object.fromEntries(OPTS.map(k => [k, $('#o-' + k).checked]));
 function gameUrl(name) {
   const q = new URLSearchParams();
@@ -476,7 +477,8 @@ function gameUrl(name) {
   q.set('theme', GAME.id); q.set('gpu', ''); q.set('net', name); q.set('save', GAME.savePrefix + name.toLowerCase());
   const res = $('#res').value; if (res) q.set('res', res);
   if (GAME.touch) { const tv = $('#touch').value; if (tv === 'on') q.set('touch', ''); else if (tv === 'off') q.set('notouch', ''); }
-  for (const [k, on] of Object.entries(optsGet())) if (on) q.set(k, '');
+  // bg: the game is not told it is inactive (runtime/lifecycle.c NFSU2_BACKGROUND=run); the others are switches of the pages
+  for (const [k, on] of Object.entries(optsGet())) if (on) { if (k === 'bg') q.append('env', 'NFSU2_BACKGROUND=run'); else q.set(k, ''); }
   return '/test/hostcheck.html?' + q.toString();
 }
 
