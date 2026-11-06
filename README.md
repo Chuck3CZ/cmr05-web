@@ -27,6 +27,7 @@ Built on [wc3-web](https://github.com/Chuck3CZ/wc3-web) (same lifter and runtime
 | Start page: browser check, loading ring, controls | works (`web/landing.html`) |
 | Download the game data ahead (2.6 GB, without the videos), from the start page | works (`web/landing.html`, `src/host/predownload-worker.ts`) |
 | Co-driver arrow in its box drawn too big; map at the start of a stage | known bugs |
+| After several races the scenery stops being textured (outlines only, monochrome) | known bug, cause not found: seen right after the window lost and regained focus (log: `app: deactivated`/`activated`, then `[D3D] Reset`); the start page option to keep the game running in the background avoids the focus loss |
 | Videos (WMV), gamepad and wheel (DirectInput 8) | not yet |
 
 The plan, the state and the measured numbers are in [docs/PLAN.md](docs/PLAN.md) (in Czech).
@@ -72,7 +73,7 @@ Win32, Direct3D 9, DirectInput 8 a DirectSound jsou napsané znovu a grafika bě
 přineseš sám. Stojí na [wc3-web](https://github.com/Chuck3CZ/wc3-web).
 
 **Stav:** menu, závody, HUD, zvuk (hudba, motor, spolujezdec), klávesnice a dotykové ovládání fungují. Známé chyby:
-šipka spolujezdce v rámečku je zvětšená a mapa při startu etapy. Zatím chybí videa (WMV), gamepad a volant.
+šipka spolujezdce v rámečku je zvětšená, mapa při startu etapy a po několika závodech se někdy přestanou kreslit textury prostředí (zůstanou obrysy; objevilo se po ztrátě fokusu okna a následném `Reset` zařízení, pomáhá volba „běh na pozadí“ na startovní stránce). Zatím chybí videa (WMV), gamepad a volant.
 Podrobný plán a stav jsou v [docs/PLAN.md](docs/PLAN.md).
 
 **Co potřebuješ:** české vydání hry (data mají 2,9 GB a stránka je stahuje průběžně), k hraní aktuální Chrome nebo
