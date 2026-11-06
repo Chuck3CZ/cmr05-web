@@ -96,7 +96,10 @@ if (gpu) {
     if (touch) {
       attachTouchKeys(wrap, inp);
       fs.onclick = () => { wrap.requestFullscreen({ navigationUI: 'hide' }).then(() => {
-        const o: any = (screen as any).orientation; if (o && o.lock) o.lock('landscape').catch(() => {}); canvas.focus(); },
+        const o: any = (screen as any).orientation; if (o && o.lock) o.lock('landscape').catch(() => {});
+        // a keyboard (computer): Escape goes to the game, holding it leaves full screen (as without the touch buttons)
+        try { (navigator as any).keyboard?.lock?.().catch((e: unknown) => log(`[input] keyboard lock refused: ${e}`)); } catch { /* none */ }
+        canvas.focus(); },
         e => log('fullscreen: ' + e)); };
       log('[page] touch controls on (?notouch hides them)');
     }
