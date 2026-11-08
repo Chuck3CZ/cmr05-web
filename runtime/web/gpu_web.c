@@ -291,7 +291,7 @@ static unsigned tex_new(unsigned w, unsigned h, unsigned levels, unsigned f, uns
     unsigned id = 0;
     if (g_ntfree) id = g_tfree[--g_ntfree];
     else if (g_texn < MAXTEX) id = g_texn++;
-    if (!id) return 0;
+    if (!id){ static int said; if (!said++) fprintf(stderr, "[gpu] out of texture ids (%u): a new texture draws white\n", MAXTEX); return 0; }
     if (!levels) levels = 1;
     g_tex[id].w = (uint16_t)w; g_tex[id].h = (uint16_t)h; g_tex[id].levels = (uint8_t)(levels > 255 ? 255 : levels);
     g_tex[id].cube = cube ? 1 : 0; g_tex[id].rt = rt ? 1 : 0; g_tex[id].live = 1; g_tex[id].pack = 0;
@@ -664,6 +664,25 @@ static unsigned psc_put(Buf *B){
 static int ps_of(unsigned tex){
     return (g_cur_ps > 0 && g_cur_ps < PSCUBE && metal_tex_is_cube(tex)) ? g_cur_ps + PSCUBE : g_cur_ps;
 }
+
+/* Textures a draw samples that the page cannot show (it draws white): an id
+ * no longer live (freed, or never made), or one the game never uploaded a
+ * level of.  The first few of each go to the log with the texture's size and
+ * format; metal_present adds a line a minute while any appear.  (CMR: the
+ * stage's scenery white after the 3rd-5th stage, 2026-11-08.) */
+static unsigned long g_dead_draws, g_empty_draws;
+static void texcheck(unsigned id){
+    static int said;
+    if (!id) return;
+    if (id >= MAXTEX || !g_tex[id].live){
+        g_dead_draws++;
+        if (said < 24){ said++; fprintf(stderr, "[gpu] a draw samples texture %u, which is not live (ids in use %u, free %u)\n", id, g_texn, g_ntfree); }
+    } else if (!g_tex[id].lvlmask && !g_tex[id].rt && !g_tex[id].pack){
+        g_empty_draws++;
+        if (said < 24){ said++; fprintf(stderr, "[gpu] a draw samples texture %u (%ux%u fmt 0x%x, %u levels), which was never uploaded\n",
+                                        id, g_tex[id].w, g_tex[id].h, g_tex[id].fmt, g_tex[id].levels); }
+    }
+}
 /* the record every draw shares: state at the time of the call */
 static GwDraw *rec_draw(Buf *B, unsigned tex){
     GwDraw *D = &B->d[B->dn];
@@ -671,6 +690,7 @@ static GwDraw *rec_draw(Buf *B, unsigned tex){
     D->kind = GW_DRAW; D->tex = tex; D->target = g_cur_target;
     D->blend = g_cur_blend; D->aref = g_cur_aref; D->depth = g_cur_depth;
     D->tex1 = g_cur_tex1; D->tex2 = g_cur_tex2; D->tex3 = g_cur_tex3;
+    texcheck(tex); texcheck(g_cur_tex1); texcheck(g_cur_tex2); texcheck(g_cur_tex3);
     D->ps = ps_of(tex); D->psci = psc_put(B);
     memcpy(D->proj, g_cur_proj, sizeof D->proj);
     memcpy(D->smp, g_cur_smp, sizeof D->smp);
@@ -993,6 +1013,15 @@ void metal_present(void){
     tex_free_due(0);
     vsync_feed();
     view_follow();
+    { static double last; double t = now_ms();
+      if (t - last >= 60000.0){
+          static unsigned long d0, e0;
+          if (g_dead_draws != d0 || g_empty_draws != e0 || !last){
+              unsigned live = 0; for (unsigned i = 1; i < g_texn; i++) live += g_tex[i].live;
+              fprintf(stderr, "[gpu] texture ids: %u in use (%u live, %u free), %ld created, %lu released; draws on a dead texture %lu, on a never uploaded one %lu\n",
+                      g_texn, live, g_ntfree, g_tex_created, g_tex_released, g_dead_draws, g_empty_draws);
+              d0 = g_dead_draws; e0 = g_empty_draws; }
+          last = t; } }
 }
 
 /* LockRect on a render target the game made lockable (com.c, CreateRenderTarget):
