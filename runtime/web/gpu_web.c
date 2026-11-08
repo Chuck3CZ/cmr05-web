@@ -660,7 +660,7 @@ static unsigned psc_put(Buf *B){
     B->psc_last = B->pscn++; B->psc_lastver = g_psc_ver;
     return B->psc_last;
 }
-#define PSCUBE 256
+#define PSCUBE 0x8000   /* com.c, shader-abi.ts */
 static int ps_of(unsigned tex){
     return (g_cur_ps > 0 && g_cur_ps < PSCUBE && metal_tex_is_cube(tex)) ? g_cur_ps + PSCUBE : g_cur_ps;
 }

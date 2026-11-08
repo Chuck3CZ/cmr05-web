@@ -62,6 +62,12 @@ const BLENDOP: GPUBlendOperation[] = ['add', 'add', 'subtract', 'reverse-subtrac
 const CMP: GPUCompareFunction[] = ['always', 'never', 'less', 'equal', 'less-equal', 'greater', 'not-equal', 'greater-equal', 'always'];
 const ADDR: GPUAddressMode[] = ['repeat', 'repeat', 'mirror-repeat', 'clamp-to-edge', 'clamp-to-edge', 'mirror-repeat'];
 
+/** a pipeline's cache key: a string, as the shader ids are not bounded (a number with fixed fields
+ *  gave 10 bits to the pixel shader and 9 to the vertex shader: ids from later stages shared keys) */
+function pipeKey(blend: number, ps: number, vs: number, cull: number, dm: number, nd: boolean): string {
+  return `${blend}/${ps}/${vs}/${cull}/${dm}${nd ? '/n' : ''}`;
+}
+
 export class Encoder {
   readonly device: GPUDevice;
   private queue: GPUQueue;
@@ -84,7 +90,7 @@ export class Encoder {
   private vsMods = new Map<number, GPUShaderModule>();
   private psMods = new Map<number, GPUShaderModule>();
   private samplers = new Map<number, GPUSampler>();
-  private pipes = new Map<number, GPURenderPipeline | null>();
+  private pipes = new Map<string, GPURenderPipeline | null>();
   private bg1 = new Map<string, GPUBindGroup>();
   private destroyLater: { destroy(): void }[] = [];
 
@@ -410,7 +416,7 @@ export class Encoder {
     pass.end();
   }
 
-  private pipeDesc(key: number, blend: number, ps: number, vs: number, cull: number, dm: number, nd: boolean): GPURenderPipelineDescriptor | null {
+  private pipeDesc(key: string, blend: number, ps: number, vs: number, cull: number, dm: number, nd: boolean): GPURenderPipelineDescriptor | null {
     // the translator's modules (vs_0 / ps_0 / ps_256 included once registered), else the built-in fallbacks
     const cube = ps >= PSCUBE;
     const vq = this.vsMods.get(vs), pq = this.psMods.get(ps);
@@ -438,7 +444,7 @@ export class Encoder {
   }
 
   /** a pipeline needed now: created synchronously (a first use may hitch; warmUp() avoids most) */
-  private pipeline(key: number, blend: number, ps: number, vs: number, cull: number, dm: number, nd: boolean): GPURenderPipeline | null {
+  private pipeline(key: string, blend: number, ps: number, vs: number, cull: number, dm: number, nd: boolean): GPURenderPipeline | null {
     const desc = this.pipeDesc(key, blend, ps, vs, cull, dm, nd);
     if (!desc) { this.pipes.set(key, null); return null; }
     this.device.pushErrorScope('validation');
@@ -486,7 +492,7 @@ export class Encoder {
       const vs = this.vsByHash.get(e.v), ps = this.psByHash.get(e.p);
       if (vs === undefined || ps === undefined) return true;
       const blend = e.s % 262144, cull = Math.floor(e.s / 262144) % 4, dm = Math.floor(e.s / 1048576) % 64, nd = e.s >= 67108864;
-      const key = blend + ps * 262144 + vs * 268435456 + cull * 137438953472 + dm * 549755813888 + (nd ? 35184372088832 : 0);
+      const key = pipeKey(blend, ps, vs, cull, dm, nd);
       if (this.pipes.has(key)) return false;
       const desc = this.pipeDesc(key, blend, ps, vs, cull, dm, nd);
       if (!desc) return false;
@@ -600,7 +606,7 @@ export class Encoder {
     // the pass's size, and the scissor in effect in it (a GwDraw.clip value; 0 = the whole target)
     let passW = 0, passH = 0, cClip: number | string = 0;
     // the previous draw's pipeline (pipelines outlive passes, so this survives a pass change)
-    let lastKey = -1, lastPipe: GPURenderPipeline | null | undefined;
+    let lastKey = '', lastPipe: GPURenderPipeline | null | undefined;
     const b1 = this.b1, dyn = this.dyn;
     b1[0] = -1;
     let draws = 0, passes = 0, skipped = 0;
@@ -703,7 +709,7 @@ export class Encoder {
       let psEff = psid > 0 && this.psMods.has(psid) ? psid : psid >= PSCUBE ? PSCUBE : 0;
       if (psEff === 0 && t0 && this.tex[t0]?.cube) psEff = PSCUBE;
       const nd = !(aref > 0);
-      const key = blend + psEff * 262144 + vsid * 268435456 + cull * 137438953472 + dm * 549755813888 + (nd ? 35184372088832 : 0);
+      const key = pipeKey(blend, psEff, vsid, cull, dm, nd);
       let pipe = key === lastKey ? lastPipe : this.pipes.get(key);
       if (pipe === undefined) pipe = this.pipeline(key, blend, psEff, vsid, cull, dm, nd);
       lastKey = key; lastPipe = pipe;

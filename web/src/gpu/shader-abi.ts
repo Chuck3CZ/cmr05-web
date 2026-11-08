@@ -15,7 +15,7 @@ export const HLPAR_SIZE = 656;
 /** One CPU-transformed vertex (gfx.h TVert): pos, col0, col1, t[4], all f32. */
 export const TVERT_SIZE = 112;
 /** Pixel shader id offset of the stage-0 cube twin (com.c / metal.m PSCUBE). */
-export const PSCUBE = 256;
+export const PSCUBE = 0x8000;
 /** Interstage locations used by VOut (col0, col1, uv0..uv3, fog). */
 export const VOUT_LOCATIONS = 7;
 

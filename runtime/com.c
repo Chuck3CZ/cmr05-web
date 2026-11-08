@@ -243,7 +243,9 @@ static uint32_t com_new(uint32_t iface, uint32_t extra){
 /* dinput_pad.c CreateEffect: a new IDirectInputEffect (16 bytes of its own) */
 uint32_t com_new_dieffect(void){ return com_new(IF_DIEFF, 16u); }
 
-#define PSCUBE 256   /* must MATCH metal.m: cube ps variant */
+#define PSCUBE 0x8000   /* cube ps variant: id + PSCUBE (gpu_web.c, shader-abi.ts); above any id the game reaches
+                          * (CMR makes new pixel shaders with every stage: at 256 its 256th took the fixed-function
+                          * cube id and later ones overwrote the cube twins of the first, the scenery drew white) */
 uint64_t g_com_calls=0, g_com_unimpl=0;
 /* per-method call counter: the work list for the render layer */
 #define MSTAT_IF 32
@@ -4062,7 +4064,7 @@ int com_call(CPU *c, uint32_t magic){
 #if NFS_ENHANCED
                     /* HD: the reflection-split variant is generated at draw
                      * time when needed (com_ps_refl_variant); the program is kept. */
-                    if (id < PSCUBE && !g_psprog[id]) g_psprog[id] = pp3;
+                    if (id < 256 && !g_psprog[id]) g_psprog[id] = pp3;
                     else
 #endif
                     vs_free(pp3);
