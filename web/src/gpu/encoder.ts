@@ -121,6 +121,9 @@ export class Encoder {
 
   /** guest frames whose records are logged in full (diagnostics), and "trace every dumped frame" */
   traceSeq = new Set<number>(); traceDumps = false; logShaders = false;
+  /** the next N encoded frames are traced, with the WGSL of the shaders they use (Renderer.trace) */
+  traceNext = 0; private traceText = false;
+  private shaderText = new Map<string, string>(); private traceUsed = new Set<string>();
   /** diagnostics: log every create / upload / free of these texture ids */
   watchTex = new Set<number>();
   private tr: string[] | null = null;
@@ -218,6 +221,7 @@ export class Encoder {
           const mod = this.module(`${op === Op.ShaderVs ? 'vs' : 'ps'}_${a0}`, text);
           (op === Op.ShaderVs ? this.vsMods : this.psMods).set(a0, mod);
           if (this.logShaders) this.log(`[shader ${op === Op.ShaderVs ? 'vs' : 'ps'}_${a0}]\n${text}\n[/shader]`);
+          this.shaderText.set(`${op === Op.ShaderVs ? 'vs' : 'ps'}_${a0}`, text);
           const h = fnv(text);
           if (op === Op.ShaderVs) { this.vsHash.set(a0, h); this.vsByHash.set(h, a0); } else { this.psHash.set(a0, h); this.psByHash.set(h, a0); }
           this.warmUp();
@@ -582,7 +586,8 @@ export class Encoder {
       if (this.bb) { this.destroyLater.push(this.bb); this.bb = null; this.bbView = null; }
     } else { this.ensureBackBuffer(bbW, bbH); this.screen = this.bb; this.screenView = this.bbView; }
     const seq = u32[fw + F.seq];
-    this.tr = this.traceSeq.has(seq) || (this.traceDumps && u32[fw + F.dump]) ? [] : null;
+    this.traceText = this.traceNext > 0; if (this.traceText) this.traceNext--;
+    this.tr = this.traceText || this.traceSeq.has(seq) || (this.traceDumps && u32[fw + F.dump]) ? [] : null;
     const tr = this.tr;
     if (tr) tr.push(`[trace] frame ${seq}: ${dn} records, ${vn} tverts, raw ${rvn} B, consts ${kn} B, back buffer ${bbW}x${bbH}, clear ${u32[fw + F.clearArgb].toString(16)}`);
 
@@ -790,6 +795,7 @@ export class Encoder {
       } else if (vsid > 0) p.draw(count, 1, 0, kb);
       else p.draw(count, 1, u32[w + D.first], 0);
       draws++; this.calls.draw++;
+      if (tr && this.traceText) { if (vsid > 0) this.traceUsed.add(`vs_${vsid}`); if (psEff > 0) this.traceUsed.add(`ps_${psEff}`); }
       if (tr) tr.push(`  #${i} ${isz ? `ix${isz * 8} ib ${u32[w + D.ixIb]} base ${i32[w + D.ixBase]}` : vsid > 0 ? 'raw' : `tvert ${u32[w + D.first]}`} n ${count} vs ${vsid} ps ${psid}${psEff !== psid ? `->${psEff}` : ''} blend ${blend.toString(16)} depth ${(depth & 63).toString(16)}${realZ ? '' : '(off)'} cull ${cull} aref ${aref.toFixed(3)} bcol ${bcol.toString(16)} tex ${t0}${v0.serial === 0 && t0 ? '(white)' : ''},${t1},${t2},${t3} smp ${s0.toString(16)} koff ${koff} kb ${kb} poff ${poff}`);
     }
     endPass();
@@ -833,6 +839,10 @@ export class Encoder {
       for (const [ser, n] of top) {
         const id = this.tex.findIndex(t => t?.serial === ser), t = this.tex[id];
         tr.push(`  re-uploaded: tex ${id} ${n}x ${t ? `${t.w}x${t.h} fmt ${t.fmt} levels ${t.levels}` : '(freed)'}`);
+      }
+      if (this.traceText) {
+        for (const k of this.traceUsed) tr.push(`[shader ${k}]\n${this.shaderText.get(k) ?? '(text not kept)'}\n[/shader]`);
+        this.traceUsed.clear();
       }
       this.log(tr.join('\n')); this.tr = null;
     }

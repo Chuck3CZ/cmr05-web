@@ -84,6 +84,16 @@ if (gpu) {
   try {
     const r = await attachRenderer(p, canvas, { log });
     log('[page] WebGPU renderer attached');
+    // Ctrl+Shift+D: the next frame in full into the log (every draw, its shaders, textures and states); the
+    // game does not see the key (before attachInput: its listener is on window too, in the capture phase)
+    const traceKey = (e: KeyboardEvent) => e.ctrlKey && e.shiftKey && e.code === 'KeyD';
+    window.addEventListener('keydown', e => {
+      if (!traceKey(e)) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (e.repeat) return;
+      log('[page] Ctrl+Shift+D: tracing the next frame'); r.trace(1);
+    }, { capture: true });
+    window.addEventListener('keyup', e => { if (traceKey(e)) { e.preventDefault(); e.stopImmediatePropagation(); } }, { capture: true });
     // mouse and keyboard over the picture (imageRect is in canvas pixels; the input wants CSS px)
     // the OS cursor hidden over the game (the game draws its own; both together looked like a lagging mouse), and
     // in fullscreen the keyboard (Escape goes to the game; holding it leaves) and the mouse locked to the game

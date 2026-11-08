@@ -109,6 +109,8 @@ export interface Renderer {
   /** read the back buffer of the next encoded frame as PNG; with opts.artifacts it is also
    *  uploaded as <name>.png (an autotest dump falling on the same frame keeps its own name) */
   dump(name: string): Promise<Blob>;
+  /** log every record of the next n frames in full, with the WGSL of the shaders they use (diagnostics) */
+  trace(n?: number): void;
   /** distributions of the frames since the last call with reset (or since attach) */
   window(reset?: boolean): RendererWindow;
   /** each frame's time from its submit until the GPU had done it (onSubmittedWorkDone, so every
@@ -653,6 +655,7 @@ export async function attachRenderer(proc: GameProcess, canvas: HTMLCanvasElemen
 
   return {
     device,
+    trace: (n = 1) => { enc.traceNext = Math.max(1, n); },
     stats: () => ({ frames, draws: enc.totalDraws, passes: enc.totalPasses, pipelines: enc.pipelinesMade, pipelinesWarm: enc.pipelinesAsync, errors,
       pipelineMs: enc.pipeMs, pipelineMsMax: enc.pipeMsMax, gpuMsAvg: gpuMsN ? gpuMsTotal / gpuMsN : 0, gpuMsMax,
       encodeMsAvg: frames ? encMsTotal / frames : 0, encodeMsLast: encMsLast, drawsLast, passesLast, rafHz, inFlight,
