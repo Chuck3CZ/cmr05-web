@@ -571,7 +571,7 @@ const uint8_t *metal_pool_cpu(void){ return g_pool; }
  * pixel shader is ignored (the page draws those draws with its built-in
  * fixed-function fragment stage). */
 #define MAXVSF 512
-#define MAXPS  512
+#define MAXPS  0x10000   /* the cube twins are id + PSCUBE (0x8000) */
 static uint8_t g_vs_ok[MAXVSF], g_ps_ok[MAXPS];
 static unsigned g_vs_n = 0, g_ps_n = 0, g_msl_vs = 0, g_msl_ps = 0;
 static int is_wgsl(const char *s){ return s && (strstr(s, "@vertex") || strstr(s, "@fragment")); }

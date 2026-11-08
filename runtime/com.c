@@ -261,6 +261,41 @@ static uint32_t g_d3d9=0, g_dev=0, g_cur_decl=0, g_cur_fvf=0, g_cur_tex=0;
 #define MAXVS 1024
 static VSProg  *g_vsprog[MAXVS];
 static unsigned g_vsprogn = 1;          /* 0 = "no shader" */
+/* Shaders and vertex declarations by content.  CMR makes all of them anew for
+ * every stage, the same bytes each time: each got a new id, so the ids grew
+ * without end and past the renderer's tables (pixel shaders past 512 were
+ * dropped and drew with the fixed-function stage: the car without its panels
+ * and glass; vertex shaders past 256 went to the CPU).  The same bytes now get
+ * the id they had (the programs and objects are kept for the session anyway).
+ * kind: 0 vertex shader, 1 pixel shader, 2 declaration; id + 1 is stored. */
+#define SHID_N 4096
+static struct { uint64_t h; uint32_t kind, copy, size, id1; } g_shid[SHID_N];
+static int g_shidn = 0;
+static uint64_t shid_hash(uint32_t kind, uint32_t copy, uint32_t size){
+    uint64_t h = 1469598103934665603ull ^ kind;
+    for (uint32_t i = 0; i < size; i++) h = (h ^ g_mem[copy + i]) * 1099511628211ull;
+    return h;
+}
+/* the id these bytes had, or -1 */
+static long shid_get(uint32_t kind, uint32_t copy, uint32_t size){
+    uint64_t h = shid_hash(kind, copy, size);
+    for (int i = 0; i < g_shidn; i++)
+        if (g_shid[i].h == h && g_shid[i].kind == kind && g_shid[i].size == size &&
+            !memcmp(g_mem + g_shid[i].copy, g_mem + copy, size)) return (long)g_shid[i].id1 - 1;
+    return -1;
+}
+static void shid_put(uint32_t kind, uint32_t copy, uint32_t size, uint32_t id){
+    if (g_shidn >= SHID_N) return;
+    g_shid[g_shidn].h = shid_hash(kind, copy, size); g_shid[g_shidn].kind = kind;
+    g_shid[g_shidn].copy = copy; g_shid[g_shidn].size = size; g_shid[g_shidn].id1 = id + 1u; g_shidn++;
+}
+static uint32_t g_decln = 0;
+/* gpuvs_id's key for a declaration: its content id (bit 31 set), else its address */
+static uint32_t decl_key(uint32_t d){
+    if (d && mem_is_committed(d + 15) && (CH_IFACE(d) & 0xFFFFu) == IF_VDECL && MR32(d + 12))
+        return 0x80000000u | MR32(d + 12);
+    return d;
+}
 void mprot_arm(uint32_t);
 /* CoreAudio output (runtime/audio.m) */
 int      audio_register(uint32_t data, uint32_t bytes, uint32_t rate,
@@ -1823,7 +1858,7 @@ static int draw_up(uint32_t pt, uint32_t nv, uint32_t vp, uint32_t stride){
      * Lines take the CPU path: draw_lines widens them from the transformed vertices. */
     int lines = (pt == 2u || pt == 3u);
     if (prog && nel && stride && stride <= 256u && g_gpuvs && !lines){
-        int gid = gpuvs_id(prog, g_cur_vs, g_cur_decl, el, nel);
+        int gid = gpuvs_id(prog, g_cur_vs, decl_key(g_cur_decl), el, nel);
         if (gid > 0){
             int  metal_draw_raw(const void*, unsigned, unsigned, unsigned,
                                 unsigned, int, const float*, unsigned);
@@ -3987,6 +4022,9 @@ int com_call(CPU *c, uint32_t magic){
             uint32_t copy = bytes ? gbuf_alloc(bytes) : 0;
             if (copy && el) memcpy(g_mem+copy, g_mem+el, bytes);
             MR32(h+4)=copy; MR32(h+8)=bytes;
+            if (copy){ long did = shid_get(2u, copy, bytes);
+                if (did < 0){ did = (long)++g_decln; shid_put(2u, copy, bytes, (uint32_t)did); }
+                MR32(h+12) = (uint32_t)did; }
 #ifdef __wasm__
             if (wgsl_dump_on() && copy) wgsl_dump_decl(h, g_mem+copy, bytes);
 #endif
@@ -4026,7 +4064,9 @@ int com_call(CPU *c, uint32_t magic){
             }
             /* Translate the pixel shader to MSL and register it with Metal:
              * the game's own shader runs on the GPU UNCHANGED. */
-            if (MID(CreatePixelShader) && copy && sz >= 8){
+            long seen = (copy && sz >= 8) ? shid_get(MID(CreatePixelShader) ? 1u : 0u, copy, sz) : -1;
+            if (seen > 0) MR32(h+12) = (uint32_t)seen;      /* translated and registered already */
+            if (MID(CreatePixelShader) && copy && sz >= 8 && seen <= 0){
                 VSProg *pp3 = vs_compile((const uint32_t *)(g_mem+copy), sz/4u);
                 if (pp3){
                     static char msl[SHADER_TEXT_CAP];
@@ -4042,6 +4082,7 @@ int com_call(CPU *c, uint32_t magic){
                     if (pl > 0){
                         metal_register_ps(id, msl);
                         MR32(h+12) = (uint32_t)id;
+                        shid_put(1u, copy, sz, (uint32_t)id);
                     }
                     /* CUBE VARIANT (id + PSCUBE): in D3D9, ps_1_x does not
                      * declare the texture TYPE; the type comes from the
@@ -4070,9 +4111,9 @@ int com_call(CPU *c, uint32_t magic){
                     vs_free(pp3);
                 }
             }
-            if (MID(CreateVertexShader) && copy && sz >= 8 && g_vsprogn < MAXVS){
+            if (MID(CreateVertexShader) && copy && sz >= 8 && seen <= 0 && g_vsprogn < MAXVS){
                 VSProg *vp2 = vs_compile((const uint32_t *)(g_mem+copy), sz/4u);
-                if (vp2){ g_vsprog[g_vsprogn] = vp2; MR32(h+12) = g_vsprogn++;
+                if (vp2){ g_vsprog[g_vsprogn] = vp2; shid_put(0u, copy, sz, g_vsprogn); MR32(h+12) = g_vsprogn++;
 #ifdef __wasm__
                     if (wgsl_dump_on()) wgsl_dump_obj("vs", (int)g_vsprogn - 1, g_mem+copy, sz, vp2);
 #endif
