@@ -1765,6 +1765,7 @@ static int draw_up(uint32_t pt, uint32_t nv, uint32_t vp, uint32_t stride){
     vsk = fixmat_apply(vsk);
     g_ui_clip = 1.f;
     vsk = aspect_apply(vsk, prog);
+    int vp_part = 0;                /* a viewport smaller than the target */
 #ifdef __wasm__
     { void metal_set_ui_clip(float); metal_set_ui_clip(g_ui_clip); }
     /* the viewport, and the scissor rectangle when D3DRS_SCISSORTESTENABLE
@@ -1772,6 +1773,7 @@ static int draw_up(uint32_t pt, uint32_t nv, uint32_t vp, uint32_t stride){
      * cuts it to the box with SetScissorRect */
     { int ffp_viewport_rect(int *); void metal_set_vp_clip(int, int, int, int);
       int vr[4], has = ffp_viewport_rect(vr);
+      vp_part = has;
       if (!has){ vr[0] = 0; vr[1] = 0; vr[2] = (int)g_bb_w; vr[3] = (int)g_bb_h; }
       if (g_rs[174] && g_sc_ok){
           if (g_sc_rect[0] > vr[0]) vr[0] = g_sc_rect[0]; if (g_sc_rect[1] > vr[1]) vr[1] = g_sc_rect[1];
@@ -1857,7 +1859,11 @@ static int draw_up(uint32_t pt, uint32_t nv, uint32_t vp, uint32_t stride){
      * silently wrong: vs_to_msl returns 0 and we fall back to the proven CPU path.
      * Lines take the CPU path: draw_lines widens them from the transformed vertices. */
     int lines = (pt == 2u || pt == 3u);
-    if (prog && nel && stride && stride <= 256u && g_gpuvs && !lines){
+    /* Under a viewport smaller than the target the CPU path (ffp_vp_apply maps the
+     * shader's clip space into the viewport): the GPU shader's output went to the
+     * whole target, cut to the viewport only, so CMR5's pace-note arrow drew
+     * magnified in its box, and the stage map before a stage in its 640x355 view */
+    if (prog && nel && stride && stride <= 256u && g_gpuvs && !lines && !vp_part){
         int gid = gpuvs_id(prog, g_cur_vs, decl_key(g_cur_decl), el, nel);
         if (gid > 0){
             int  metal_draw_raw(const void*, unsigned, unsigned, unsigned,
