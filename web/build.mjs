@@ -65,7 +65,11 @@ if (fs.existsSync('src/app/lang')) for (const f of fs.readdirSync('src/app/lang'
   fs.writeFileSync(path.join(DIST, 'lang', f), JSON.stringify(JSON.parse(fs.readFileSync(path.join('src/app/lang', f), 'utf8'))));
 // loading.js is named by its content (?v=): a browser or a proxy that kept an older one cannot run it for the new page
 const LOADV = crypto.createHash('sha1').update(fs.readFileSync('loading.js')).digest('hex').slice(0, 8);
-const page = name => `<!doctype html><meta charset=utf-8><title>${name}</title>${name === 'hostcheck' ? `<script src="/test/loading.js?v=${LOADV}"></script>` : ''}<script type=module src="/test/${name}.js"></script>`;
+// so is each test page's own script: Cloudflare gives scripts a browser cache time (max-age=14400) whatever the
+// server says, and a page that ran the previous script with a new module drew with the old renderer
+const scriptV = name => { const f = path.join(DEV, 'test', `${name}.js`);
+  return fs.existsSync(f) ? crypto.createHash('sha1').update(fs.readFileSync(f)).digest('hex').slice(0, 8) : '0'; };
+const page = name => `<!doctype html><meta charset=utf-8><title>${name}</title>${name === 'hostcheck' ? `<script src="/test/loading.js?v=${LOADV}"></script>` : ''}<script type=module src="/test/${name}.js?v=${scriptV(name)}"></script>`;
 for (const name of ['play', 'hostcheck', 'shadercheck', 'aicheck'].filter(n => opts.entryPoints['test/' + n])) fs.writeFileSync(path.join(DEV, 'test', `${name}.html`), page(name));
 // the player's page takes its address's test parameters only from a server that serves this (--dev: shell.ts)
 fs.writeFileSync(path.join(DEV, 'test', 'dev.json'), '{"dev":true}\n');
