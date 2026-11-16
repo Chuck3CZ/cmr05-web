@@ -6,7 +6,10 @@ import { attachRenderer } from '../gpu/index';
 import { attachInput } from '../input/index';
 import { attachTouchKeys, touchWanted } from '../app/touchkeys';
 import { attachAudio } from '../audio/index';
-const q = new URLSearchParams(location.search);
+import { startSaveSync, type SaveSync } from '../host/savesync';
+// the short address /hra/<name>: its parameters set by the page's first script (build.mjs BOOT); without them it is on its way back
+if ((window as any).__redir) await new Promise(() => {});
+const q: URLSearchParams = (window as any).__q ?? new URLSearchParams(location.search);
 const gpu = q.has('gpu');
 // the game's window size (WC3_WIDTH/HEIGHT, runtime/web/null_platform.c), its picture's resolution: ?res=WxH,
 // by default the screen's (CSS pixels, so a fullscreen picture is not scaled; device pixels cost the GPU too much)
@@ -17,19 +20,54 @@ const fs = document.createElement('button');
 // the canvas in a box of its own: the touch controls lie over it, and in touch mode the box goes full screen
 const wrap = document.createElement('div');
 const touch = gpu && touchWanted(q);
+// ?net=<name>: the player; the page tells the server it is here (POST /presence) and lists who else is, beside the game
+const me = q.get('net') ?? '';
+const hubPanel = !!(window as any).__hubPanel;       // the hub's panel (build.mjs HUBPANEL) lists the players instead
+const who = document.createElement('aside');
+// the progress on its way to the server (savesync.ts), beside the fullscreen button
+const syncNote = document.createElement('span'); syncNote.style.cssText = 'margin-left:14px;font:13px system-ui,sans-serif;color:#8a8';
 if (gpu) { canvas.width = resW; canvas.height = resH; canvas.style.cssText = 'display:block;width:1280px;max-width:100%;background:#000';
-           wrap.style.cssText = 'position:relative;width:max-content;max-width:100%';
-           wrap.append(canvas); document.body.append(wrap);
+           wrap.style.cssText = 'position:relative;width:max-content;max-width:100%;flex:0 1 auto;min-width:0';
+           wrap.append(canvas);
+           const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap';
+           who.style.cssText = 'flex:0 0 170px;font:13px system-ui,sans-serif;color:#ccc;background:#15171c;border:1px solid #2a2e36;border-radius:6px;padding:8px 10px';
+           row.append(wrap); if (me && !hubPanel) row.append(who); document.body.append(row);
            // full screen in touch mode: the box (buttons included), the picture fitted, landscape on a phone
            const st = document.createElement('style');
            st.textContent = '.wc3wrap:fullscreen{width:100vw!important;max-width:none!important;background:#000;display:flex;align-items:center;justify-content:center}' +
              '.wc3wrap:fullscreen canvas{width:auto!important;height:100vh!important;max-width:100vw!important;object-fit:contain}';
            document.head.append(st); wrap.className = 'wc3wrap';
-           fs.textContent = 'Celá obrazovka'; fs.style.cssText = 'margin:6px 0;font-size:14px';
+           fs.textContent = '⛶ Celá obrazovka'; fs.style.cssText = 'margin:6px 0;font-size:14px';
            fs.onclick = () => { canvas.requestFullscreen({ navigationUI: 'hide' }).then(() => canvas.focus(), e => console.log('fullscreen: ' + e)); };
            const hint = document.createElement('span'); hint.style.cssText = 'margin-left:10px;font:13px system-ui,sans-serif;color:#666';
            hint.textContent = `${resW}×${resH} (?res=ŠxV). Celou obrazovku opustíš podržením Esc.`;
-           document.body.append(fs, hint); }
+           document.body.append(fs, hint, syncNote); }
+if (me) {
+  // each report carries the round trip the previous one took (the server keeps the worst and the average per game)
+  let rtt = 0;
+  const here = (gone = false) => { const body = JSON.stringify(gone ? { name: me, gone: 1 } : { name: me, ...(rtt ? { ping: rtt } : {}) });
+    if (gone) { navigator.sendBeacon('/presence', body); return; }
+    const t0 = performance.now();
+    fetch('/presence', { method: 'POST', body, keepalive: true }).then(() => { rtt = Math.round(performance.now() - t0); }, () => {}); };
+  const draw = (ps: { name: string; lan: boolean }[]) => {
+    who.textContent = '';
+    const h = document.createElement('div'); h.style.cssText = 'font-weight:600;color:#f0c674;margin-bottom:6px';
+    h.textContent = `Hráči online (${ps.length})`; who.append(h);
+    for (const pl of ps) {
+      const d = document.createElement('div'); d.style.cssText = 'margin:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+      const dot = document.createElement('span'); dot.style.cssText = `display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;background:${pl.lan ? '#4caf50' : '#777'}`;
+      dot.title = pl.lan ? 'připojen k LAN síti' : 've hře';
+      d.append(dot, pl.name + (pl.name.toLowerCase() === me.toLowerCase() ? ' (ty)' : ''));
+      if (pl.name.toLowerCase() === me.toLowerCase()) d.style.color = '#fff';
+      who.append(d);
+    }
+    const n = document.createElement('div'); n.style.cssText = 'margin-top:6px;font-size:11px;color:#777'; n.textContent = 'zelená = připojen k LAN'; who.append(n);
+  };
+  const poll = async () => { try { const r = await fetch('/presence', { cache: 'no-store' }); if (r.ok) draw((await r.json()).players); } catch { /* the server's list is optional */ } };
+  here(); setTimeout(poll, 500);
+  setInterval(here, 20_000); setInterval(poll, 10_000);
+  addEventListener('pagehide', () => here(true));
+}
 const pre = document.createElement('pre');
 if (gpu) {
   // the log folded away under the game, opened by a click
@@ -41,7 +79,7 @@ if (gpu) {
 // ?logpost: the log also goes to the server (POST /log, web/tools/wc3-dev-server.mjs keeps it in
 // out/browser.log), so a run can be read without copying it from the page
 const posting = q.has('logpost');
-let outq: string[] = ['@@start ' + new Date().toISOString() + ' ' + location.search];
+let outq: string[] = ['@@start ' + new Date().toISOString() + ' ' + location.pathname + '?' + q.toString()];
 const flush = () => { if (!posting || !outq.length) return; const body = outq.join('\n') + '\n'; outq = [];
   // keepalive bodies are limited to 64 KB: a larger batch (a texture dump) goes without it
   fetch('/log', { method: 'POST', body, keepalive: body.length < 60000 }).catch(() => {}); };
@@ -74,11 +112,16 @@ if (script) {
   await w.write(txt); await w.close();
   env.NFSU2_INPUT_SCRIPT = '/save/autotest-script.txt';
 }
+// a player's folder (the start page's p-<name>) goes to the server each time the game saves into it
+const saveDir = q.get('save') ?? '';
+let sync: SaveSync | null = null;
+if (me && /^[a-z0-9]{1,8}-[a-z0-9_-]{2,15}$/.test(saveDir)) sync = startSaveSync(saveDir, log, s => { syncNote.textContent = s; });
 const p = await startProcess({
   module: mod, pool: +(q.get('pool') ?? 24), initialPages: +(q.get('pages') ?? 1024),
   cfg: { args: ['nfsu2', ...(q.getAll('arg'))], env: { HOME: '/save', NFSU2_DATA: '/data', ...env, ...Object.fromEntries(q.getAll('env').map(e => [e.slice(0, e.indexOf('=')), e.slice(e.indexOf('=') + 1)])) }, dataBase: '/data/', manifestUrl: '/data-manifest', saveDir: q.get('save') ?? 'save-test' },
   onLog: (s, fd, tid) => log(`[${tid}${fd === 2 ? '!' : ''}] ${s}`),
   onNote: log,
+  onSaved: path => sync?.saved(path),
 });
 if (gpu) {
   try {
